@@ -5,7 +5,6 @@ const bodyParser = require("body-parser");
 const session = require("express-session");
 const mongoose = require("mongoose");
 const routes = require("./routes");
-const passport = require("./config/passport");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,21 +18,6 @@ app.use(
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "your-secret-key",
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    },
-  })
-);
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 app.use("/api", routes);
 
@@ -50,3 +34,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
+module.exports = app;

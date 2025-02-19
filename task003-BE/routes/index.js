@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const authRoutes = require("./auth");
-const { isAuthenticated } = require("../middleware/auth");
+const airtableRoutes = require("./airtable");
 
 router.get("/", (req, res) => {
   res.json({ message: "Welcome to the API" });
@@ -10,12 +10,7 @@ router.get("/", (req, res) => {
 // Public routes
 router.use("/auth", authRoutes);
 
-// Protected routes example
-router.get("/protected-resource", isAuthenticated, (req, res) => {
-  res.json({
-    message: "This is a protected resource",
-    user: req.user,
-  });
-});
+// Add Airtable routes
+router.use("/airtable", airtableRoutes);
 
 module.exports = router;
