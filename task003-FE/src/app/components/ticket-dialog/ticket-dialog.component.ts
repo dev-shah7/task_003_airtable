@@ -26,7 +26,7 @@ interface RevisionHistory {
   styleUrls: ['./ticket-dialog.component.scss'],
 })
 export class TicketDialogComponent implements OnInit {
-  revisionHistory: RevisionHistory[] = [];
+  revisionHistory: any[] = [];
   loading = false;
   error = '';
 
@@ -41,48 +41,41 @@ export class TicketDialogComponent implements OnInit {
 
   private fetchRevisionHistory() {
     this.loading = true;
+    console.log('Fetching revision history for ticket:', this.data.airtableId);
 
-    // First get cookies
+    // Get cookies first
     this.http
       .get<any>(`${environment.apiUrl}/cookies`, {
         withCredentials: true,
-        headers: {
-          Accept: 'application/json',
-        },
       })
       .pipe(
         switchMap((cookieResponse) => {
           console.log('Cookie response:', cookieResponse);
+
           if (!cookieResponse.success) {
-            throw new Error('Failed to get cookies');
+            throw new Error('Failed to get cookies: ' + cookieResponse.error);
           }
 
-          // Extract cookies from response
-          const cookies = cookieResponse.debug;
-
-          // Then use cookies to fetch history
+          // Now fetch the revision history
           return this.http.get<any>(
             `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
             {
               withCredentials: true,
-              headers: {
-                Accept: 'application/json',
-                Cookie: `__Host-airtable-session=${cookies.sessionCookie}; __Host-airtable-session.sig=${cookies.sessionSigCookie}`,
-              },
             }
           );
         }),
         catchError((error) => {
-          console.error('Error with full details:', error);
+          console.error('Error fetching history:', error);
           return of({
             success: false,
-            error: 'Failed to fetch revision history',
+            error: error.message || 'Failed to fetch revision history',
           });
         })
       )
       .subscribe({
         next: (response) => {
-          if (response.success) {
+          console.log('Revision history response:', response);
+          if (response.success && response.revisionHistory) {
             this.revisionHistory = response.revisionHistory;
           } else {
             this.error = response.error || 'Failed to fetch revision history';
@@ -90,9 +83,9 @@ export class TicketDialogComponent implements OnInit {
           this.loading = false;
         },
         error: (error) => {
+          console.error('Subscription error:', error);
           this.error = 'Failed to fetch revision history';
           this.loading = false;
-          console.error('Error:', error);
         },
       });
   }

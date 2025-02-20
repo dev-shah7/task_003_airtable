@@ -1,45 +1,72 @@
 const puppeteer = require("puppeteer");
 
-const AIRTABLE_BASE_URL = "https://airtable.com";
+const AIRTABLE_BASE_URL = "https://airtable.com/login";
 
-exports.getAirtableCookies = async (req, res) => {
+const getAirtableCookies = async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({
-      headless: "new",
+      headless: false,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
       defaultViewport: null,
+      protocolTimeout: 180000, // Increase protocol timeout to 3 minutes
     });
 
     const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(60000);
+    page.setDefaultNavigationTimeout(120000);
+    page.setDefaultTimeout(120000);
 
-    // Set API key in headers
-    await page.setExtraHTTPHeaders({
-      Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
-      Accept: "application/json",
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    console.log("Navigating to login page...");
+    await page.goto(AIRTABLE_BASE_URL, {
+      waitUntil: "networkidle2",
+      timeout: 60000,
     });
 
-    // Navigate directly to API endpoint
-    await page.goto(`${AIRTABLE_BASE_URL}/api/v0/meta/bases`, {
-      waitUntil: "networkidle0",
-    });
+    console.log("Entering email...");
+    await page.waitForSelector('input[type="email"]', { timeout: 30000 });
+    await page.type('input[type="email"]', process.env.AIRTABLE_EMAIL);
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    console.log("Clicking continue...");
+    await page.click('button[type="submit"]');
 
-    const cookies = await page.cookies();
-    console.log("All cookies:", cookies);
+    console.log("Waiting for password field...");
+    await page.waitForSelector('input[type="password"]', { timeout: 30000 });
+    await page.type('input[type="password"]', process.env.AIRTABLE_PASSWORD);
 
-    // Get all required cookies
+    console.log("Submitting login...");
+    await Promise.all([
+      page.click('button[type="submit"]'),
+      page.waitForNavigation({
+        waitUntil: "networkidle2",
+        timeout: 60000,
+      }),
+    ]);
+
+    // Add a small delay to ensure cookies are set
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+
+    // Get cookies in smaller batches if needed
+    console.log("Retrieving cookies...");
+    const cookies = await Promise.race([
+      page.cookies(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Cookie retrieval timeout")), 30000)
+      ),
+    ]);
+
+    console.log("Retrieved cookies count:", cookies.length);
+    console.log(
+      "Cookie names:",
+      cookies.map((c) => c.name)
+    );
+
     const requiredCookies = [
       "connect.sid",
-      "airtable.sid",
+      "__Host-airtable-session",
+      "__Host-airtable-session.sig",
+      "brw",
       "AWSALBTG",
       "AWSALBTGCORS",
-      "brw",
-      "brwConsent",
     ];
 
     const cookieValues = {};
@@ -50,74 +77,40 @@ exports.getAirtableCookies = async (req, res) => {
       }
     });
 
-    // Set all cookies in response headers
-    const cookieHeaders = Object.entries(cookieValues).map(
-      ([name, value]) =>
-        `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=None`
-    );
+    if (!cookieValues["__Host-airtable-session"]) {
+      throw new Error(
+        "Essential session cookie missing! Login might have failed."
+      );
+    }
 
-    res.setHeader("Set-Cookie", cookieHeaders);
+    res.cookie("authCookies", JSON.stringify(cookieValues), {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None",
+    });
 
     res.json({
       success: true,
-      message: "Cookies set successfully",
-      debug: cookieValues,
+      message: "Cookies retrieved and set",
+      cookies: cookieValues,
     });
   } catch (error) {
-    console.error("Error retrieving Airtable cookies:", error);
+    console.error("Error in cookie retrieval:", error);
     res.status(500).json({
       error: "Failed to retrieve Airtable cookies",
       details: error.message,
     });
   } finally {
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (closeError) {
+        console.error("Error closing browser:", closeError);
+      }
     }
   }
 };
 
-exports.validateCookies = async (req, res) => {
-  let browser;
-  try {
-    const { cookies } = req.body;
-
-    if (!cookies) {
-      return res.status(400).json({ error: "Cookies are required" });
-    }
-
-    browser = await puppeteer.launch({
-      headless: "new",
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    });
-
-    const page = await browser.newPage();
-
-    // Set the cookies
-    const cookieArray = cookies.split(";").map((cookie) => {
-      const [name, value] = cookie.trim().split("=");
-      return { name, value, domain: "airtable.com" };
-    });
-
-    await page.setCookie(...cookieArray);
-
-    // Try to access Airtable
-    const response = await page.goto(`${AIRTABLE_BASE_URL}/meta/schema`, {
-      waitUntil: "networkidle0",
-    });
-
-    res.json({
-      success: true,
-      valid: response.status() === 200,
-    });
-  } catch (error) {
-    res.json({
-      success: false,
-      valid: false,
-      error: error.message,
-    });
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
-  }
+module.exports = {
+  getAirtableCookies,
 };

@@ -1,5 +1,7 @@
 const Ticket = require("../models/Ticket");
 const axios = require("axios");
+const cheerio = require("cheerio");
+const TicketRevision = require("../models/TicketRevision");
 
 exports.syncTickets = async (req, res) => {
   console.log("Starting ticket sync...");
@@ -163,36 +165,94 @@ exports.getUserTickets = async (req, res) => {
   }
 };
 
+function extractFieldChanges(diffRowHtml) {
+  const $ = cheerio.load(diffRowHtml);
+  const fieldChanges = {};
+
+  // Extract column type (like Status, Assignee, Priority, etc.)
+  const columnType = $(".micro.strong.caps").text().trim();
+
+  if (columnType) {
+    const columnDataType = $(".historicalCellValue").attr("data-columntype");
+
+    switch (columnDataType) {
+      case "select":
+        // Handle select inputs (Status, Priority)
+        const addedValue = $(".greenLight2 .flex-auto.truncate-pre")
+          .text()
+          .trim();
+        const removedValue = $(
+          ".grayLight2 .flex-auto.truncate-pre, .redLight2 .flex-auto.truncate-pre"
+        )
+          .text()
+          .trim();
+        fieldChanges[columnType] = {
+          oldValue: removedValue || null,
+          newValue: addedValue || null,
+        };
+        break;
+
+      case "multilineText":
+        // Handle multiline text fields (Description)
+        const oldText = $(".text-red-dark1.strikethrough").text().trim();
+        const newText = $(".greenLight2").text().trim();
+        fieldChanges[columnType] = {
+          oldValue: oldText || null,
+          newValue: newText || null,
+        };
+        break;
+
+      case "richText":
+        // Handle rich text fields (Resolution notes)
+        const richText = $(".richText.greenLight2").text().trim();
+        fieldChanges[columnType] = {
+          oldValue: null,
+          newValue: richText || null,
+        };
+        break;
+
+      case "date":
+        // Handle date fields (Closed at)
+        const dateValue = $(".greenLight2 .flex.flex-auto").text().trim();
+        fieldChanges[columnType] = {
+          oldValue: null,
+          newValue: dateValue || null,
+        };
+        break;
+
+      default:
+        // Default handler for other field types
+        const oldValue = $(".text-red-dark1").text().trim();
+        const newValue = $(".greenLight2").text().trim();
+        fieldChanges[columnType] = {
+          oldValue: oldValue || null,
+          newValue: newValue || null,
+        };
+    }
+  }
+
+  console.log(`Extracted changes for ${columnType}:`, fieldChanges[columnType]);
+  return fieldChanges;
+}
+
 exports.getTicketRevisionHistory = async (req, res) => {
   try {
     const { ticketId } = req.params;
+    console.log("Fetching revision history for ticket:", ticketId);
 
-    console.log("All cookies received:", req.cookies);
+    const authCookies = req.cookies.authCookies
+      ? JSON.parse(req.cookies.authCookies)
+      : null;
 
-    // Get all required cookies
-    const requiredCookies = [
-      "connect.sid",
-      "airtable.sid",
-      "AWSALBTG",
-      "AWSALBTGCORS",
-      "brw",
-      "brwConsent",
-    ];
-
-    const missingCookies = requiredCookies.filter((name) => !req.cookies[name]);
-    if (missingCookies.length > 0) {
+    if (!authCookies) {
       return res.status(400).json({
-        error: "Required cookies not found",
-        debug: {
-          missingCookies,
-          availableCookies: Object.keys(req.cookies),
-        },
+        error: "No authentication cookies found",
+        details: "Please ensure you are logged in",
       });
     }
 
-    // Format cookies for request
-    const cookieString = requiredCookies
-      .map((name) => `${name}=${req.cookies[name]}`)
+    const cookieString = Object.entries(authCookies)
+      .map(([name, value]) => `${name}=${value}`)
       .join("; ");
 
     const params = {
@@ -206,28 +266,26 @@ exports.getTicketRevisionHistory = async (req, res) => {
       secretSocketId: `soc${Math.random().toString(36).substring(2, 15)}`,
     };
 
-    // Use airtable.com instead of www.airtable.com
     const response = await axios.get(
       `https://airtable.com/v0.3/row/${ticketId}/readRowActivitiesAndComments`,
       {
         params,
         headers: {
           Cookie: cookieString,
-          Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
           Accept: "application/json",
           "Content-Type": "application/json",
           "X-Requested-With": "XMLHttpRequest",
           "X-Airtable-Client": "web",
           "X-Airtable-Client-Version": "1.0.0",
+          "x-time-zone": "UTC",
+          "x-airtable-application-id": "appA0Q5Vu9k7N0pgv",
           Origin: "https://airtable.com",
           Referer: "https://airtable.com/",
         },
-        maxRedirects: 0, // Prevent redirects
-        validateStatus: (status) => status < 500, // Accept any status < 500
+        maxRedirects: 0,
+        validateStatus: (status) => status < 500,
       }
     );
-
-    console.log("Revision history response:", response.status, response.data);
 
     if (response.status === 403) {
       return res.status(403).json({
@@ -237,7 +295,106 @@ exports.getTicketRevisionHistory = async (req, res) => {
       });
     }
 
-    res.json({ success: true, revisionHistory: response.data });
+    const revisionData = response.data?.data?.rowActivityInfoById || {};
+    const formattedRevisions = [];
+
+    // Process each activity
+    for (const [activityId, activity] of Object.entries(revisionData)) {
+      // Check if this activity already exists and was recently updated
+      const existingRevision = await TicketRevision.findOne({
+        activityId,
+        $or: [
+          // Check if it's a new record (created in last minute)
+          {
+            createdAt: {
+              $gt: new Date(Date.now() - 60000), // 1 minute ago
+            },
+          },
+          // Or if it was updated in last minute
+          {
+            updatedAt: {
+              $gt: new Date(Date.now() - 60000),
+            },
+          },
+        ],
+      });
+
+      // Skip if we recently processed this activity
+      if (existingRevision) {
+        console.log(`Skipping recently processed activity: ${activityId}`);
+        continue;
+      }
+
+      const extractedData = extractFieldChanges(activity.diffRowHtml);
+      if (Object.keys(extractedData).length > 0) {
+        const columnType = Object.keys(extractedData)[0];
+        const { oldValue, newValue } = extractedData[columnType];
+
+        // Check if the values are actually different
+        if (oldValue !== newValue) {
+          // Check if we already have this exact change recorded
+          const duplicateCheck = await TicketRevision.findOne({
+            issueId: ticketId,
+            columnType,
+            oldValue,
+            newValue,
+            createdDate: new Date(activity.createdTime),
+          });
+
+          if (!duplicateCheck) {
+            formattedRevisions.push({
+              activityId,
+              issueId: ticketId,
+              columnType,
+              oldValue,
+              newValue,
+              createdDate: new Date(activity.createdTime),
+              authoredBy: activity.originatingUserId,
+            });
+          } else {
+            console.log(`Skipping duplicate change for ${columnType}`);
+          }
+        }
+      }
+    }
+
+    // Store only new revisions in MongoDB
+    if (formattedRevisions.length > 0) {
+      try {
+        const bulkOps = formattedRevisions.map((revision) => ({
+          updateOne: {
+            filter: {
+              activityId: revision.activityId,
+              issueId: revision.issueId,
+              columnType: revision.columnType,
+              createdDate: revision.createdDate,
+            },
+            update: { $setOnInsert: revision },
+            upsert: true,
+          },
+        }));
+
+        const result = await TicketRevision.bulkWrite(bulkOps);
+        console.log(
+          `Processed ${formattedRevisions.length} revisions:`,
+          `${result.upsertedCount} new, ${result.modifiedCount} existing`
+        );
+      } catch (error) {
+        console.error("Error storing revisions:", error);
+      }
+    } else {
+      console.log("No new revisions to store");
+    }
+
+    // Get all revisions for this ticket from the database
+    const allRevisions = await TicketRevision.find({ issueId: ticketId })
+      .sort({ createdDate: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      revisions: allRevisions,
+    });
   } catch (error) {
     console.error("Error fetching revision history:", error);
     res.status(500).json({

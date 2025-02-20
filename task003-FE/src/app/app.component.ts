@@ -21,7 +21,19 @@ export class AppComponent implements OnInit {
   constructor(private airtableService: AirtableService) {}
 
   ngOnInit() {
-    this.loadBases();
+    console.log('Syncing bases...');
+    this.airtableService.fetchAndStoreBases().subscribe({
+      next: (response) => {
+        console.log('Bases synced successfully:', response);
+        this.loadBases(); // Load bases after sync
+      },
+      error: (error) => {
+        console.error('Error syncing bases:', error);
+        this.error = 'Failed to sync bases';
+        // Still try to load existing bases even if sync fails
+        this.loadBases();
+      },
+    });
   }
 
   loadBases() {

@@ -2,13 +2,32 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { environment } from '../../environments/environment';
 import { Observable } from 'rxjs';
-import { tap, catchError } from 'rxjs/operators';
+import { tap, catchError, switchMap } from 'rxjs/operators';
+import { of } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class AirtableService {
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient) {
+    // Check auth status and sync bases on service initialization
+    this.whoami()
+      .pipe(
+        switchMap((response) => {
+          if (response?.authenticated) {
+            console.log('User is authenticated, syncing bases...');
+            return this.fetchAndStoreBases();
+          }
+          console.log('User is not authenticated, skipping base sync');
+          return of(null);
+        }),
+        catchError((error) => {
+          console.error('Error during initial base sync:', error);
+          return of(null);
+        })
+      )
+      .subscribe();
+  }
 
   fetchAndStoreBases(): Observable<any> {
     const token = localStorage.getItem('airtableToken');
@@ -61,13 +80,28 @@ export class AirtableService {
   }
 
   refreshToken(): Observable<any> {
-    return this.http.post(
-      `${environment.apiUrl}/airtable/refresh-token`,
-      {},
-      {
-        withCredentials: true,
-      }
-    );
+    return this.http
+      .post(
+        `${environment.apiUrl}/airtable/refresh-token`,
+        {},
+        {
+          withCredentials: true,
+        }
+      )
+      .pipe(
+        tap(() => {
+          // After successful token refresh, fetch and store bases
+          this.fetchAndStoreBases().subscribe({
+            next: (response) =>
+              console.log(
+                'Successfully synced bases after token refresh:',
+                response
+              ),
+            error: (error) =>
+              console.error('Error syncing bases after token refresh:', error),
+          });
+        })
+      );
   }
 
   disconnect(): Observable<any> {
