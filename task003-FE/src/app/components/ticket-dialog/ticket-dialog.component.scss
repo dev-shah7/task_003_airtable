@@ -1,0 +1,35 @@
+.revision-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.revision-item {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.revision-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #666;
+  font-size: 0.9em;
+}
+
+.revision-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  .field {
+    font-weight: 500;
+  }
+
+  .change {
+    color: #2d3748;
+  }
+}

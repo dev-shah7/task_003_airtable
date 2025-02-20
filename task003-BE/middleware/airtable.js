@@ -2,35 +2,52 @@ const User = require("../models/User");
 
 exports.withAirtableAuth = async (req, res, next) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Not authenticated" });
-    }
+    console.log("Session in middleware:", {
+      sessionId: req.session.id,
+      hasUser: !!req.session.user,
+      userId: req.session.user?._id,
+    });
 
-    // Get fresh user data with tokens
-    const user = await User.findById(req.user._id).select(
-      "+airtableToken +airtableRefreshToken +airtableTokenExpiry"
-    );
-
-    if (!user?.airtableToken) {
-      return res.status(401).json({ error: "No Airtable connection" });
-    }
-
-    // Check token expiry
-    if (user.airtableTokenExpiry && new Date() > user.airtableTokenExpiry) {
-      // Token expired, try to refresh
-      try {
-        const refreshed = await refreshAirtableToken(user);
-        req.airtableToken = refreshed.airtableToken;
-      } catch (error) {
-        return res.status(401).json({ error: "Airtable token expired" });
+    // First check session
+    if (req.session?.user?._id) {
+      const user = await User.findById(req.session.user._id);
+      if (user) {
+        console.log("Found user from session:", user._id);
+        req.user = user;
+        return next();
+      } else {
+        console.log("User from session not found in DB");
       }
-    } else {
-      req.airtableToken = user.airtableToken;
     }
+
+    // If no session, check Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "No token provided" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
+    // Find user by token
+    const user = await User.findOne({ airtableToken: token });
+    if (!user) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    // Store user in session and request
+    req.session.user = user;
+    req.user = user;
+    await req.session.save();
+
+    console.log("Updated session with user:", {
+      sessionId: req.session.id,
+      userId: user._id,
+    });
 
     next();
   } catch (error) {
-    next(error);
+    console.error("Auth middleware error:", error);
+    res.status(500).json({ error: "Authentication failed" });
   }
 };
 

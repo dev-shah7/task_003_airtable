@@ -1,0 +1,25 @@
+<h2 mat-dialog-title>Ticket Details - {{ data.ticketId }}</h2>
+<mat-dialog-content>
+  <h3>Revision History</h3>
+  <div *ngIf="loading" class="loading">Loading...</div>
+  <div *ngIf="error" class="error">{{ error }}</div>
+  <div class="revision-list" *ngIf="!loading && !error">
+    <div class="revision-item" *ngFor="let revision of revisionHistory">
+      <div class="revision-header">
+        <span class="timestamp">{{
+          revision.timestamp | date : "medium"
+        }}</span>
+        <span class="user">{{ revision.user }}</span>
+      </div>
+      <div class="change-item" *ngFor="let change of revision.changes">
+        <span class="field">{{ change.field }}</span>
+        <span class="change"
+          >{{ change.oldValue }} → {{ change.newValue }}</span
+        >
+      </div>
+    </div>
+  </div>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button mat-dialog-close>Close</button>
+</mat-dialog-actions>

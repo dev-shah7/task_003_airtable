@@ -1,1 +1,13 @@
-<h1>Header</h1>
+<div class="header-container">
+  <h1>Header</h1>
+  <button
+    class="connect-btn"
+    (click)="connectToAirtable()"
+    *ngIf="!isConnected"
+  >
+    Connect to Airtable
+  </button>
+  <span *ngIf="isConnected" class="connected-status">
+    Connected to Airtable
+  </span>
+</div>

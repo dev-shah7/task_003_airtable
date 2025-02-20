@@ -5,6 +5,8 @@ const axios = require("axios");
 const qs = require("qs");
 const User = require("../models/User");
 const { withAirtableAuth } = require("../middleware/airtable");
+const baseController = require("../controllers/baseController");
+const ticketController = require("../controllers/ticketController");
 
 // Store authorization states temporarily with cleanup
 const authorizationCache = {};
@@ -21,44 +23,57 @@ setInterval(() => {
 }, 15 * 60 * 1000);
 
 // Initialize Airtable OAuth routes
-router.get("/auth", (req, res) => {
-  // Prevents others from impersonating Airtable
-  const state = crypto.randomBytes(100).toString("base64url");
+router.get("/auth", async (req, res) => {
+  try {
+    // Create a temporary user if one doesn't exist
+    let userId;
+    const tempUser = await User.create({});
+    userId = tempUser._id;
+    console.log("Created new user for OAuth:", userId);
 
-  // Prevents others from impersonating you
-  const codeVerifier = crypto.randomBytes(96).toString("base64url");
-  const codeChallenge = crypto
-    .createHash("sha256")
-    .update(codeVerifier)
-    .digest("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
+    // Prevents others from impersonating Airtable
+    const state = crypto.randomBytes(100).toString("base64url");
 
-  // Store in cache with user ID and timestamp
-  authorizationCache[state] = {
-    codeVerifier,
-    userId: req.user?._id,
-    timestamp: Date.now(),
-  };
+    // Prevents others from impersonating you
+    const codeVerifier = crypto.randomBytes(96).toString("base64url");
+    const codeChallenge = crypto
+      .createHash("sha256")
+      .update(codeVerifier)
+      .digest("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
 
-  // Build authorization URL with correct API version
-  const authUrl = new URL(`${process.env.AIRTABLE_URL}/oauth2/v1/authorize`);
-  authUrl.searchParams.set("code_challenge", codeChallenge);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-  authUrl.searchParams.set("state", state);
-  authUrl.searchParams.set("client_id", process.env.AIRTABLE_CLIENT_ID);
-  authUrl.searchParams.set("redirect_uri", process.env.AIRTABLE_REDIRECT_URI);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("scope", process.env.AIRTABLE_SCOPE);
+    // Store in cache with user ID and timestamp
+    authorizationCache[state] = {
+      codeVerifier,
+      userId: userId, // Store the new user's ID
+      timestamp: Date.now(),
+    };
 
-  console.log("Initiating Airtable OAuth flow:");
-  console.log("State:", state);
-  console.log("Code Verifier:", codeVerifier);
-  console.log("Code Challenge:", codeChallenge);
-  console.log("Authorization URL:", authUrl.toString());
+    console.log("Storing in auth cache:", {
+      state,
+      userId,
+      timestamp: Date.now(),
+    });
 
-  res.redirect(authUrl.toString());
+    // Build authorization URL with correct API version
+    const authUrl = new URL(`${process.env.AIRTABLE_URL}/oauth2/v1/authorize`);
+    authUrl.searchParams.set("code_challenge", codeChallenge);
+    authUrl.searchParams.set("code_challenge_method", "S256");
+    authUrl.searchParams.set("state", state);
+    authUrl.searchParams.set("client_id", process.env.AIRTABLE_CLIENT_ID);
+    authUrl.searchParams.set("redirect_uri", process.env.AIRTABLE_REDIRECT_URI);
+    authUrl.searchParams.set("response_type", "code");
+    authUrl.searchParams.set("scope", process.env.AIRTABLE_SCOPE);
+
+    res.redirect(authUrl.toString());
+  } catch (error) {
+    console.error("Auth initialization error:", error);
+    res.redirect(
+      `${process.env.PUBLIC_APP_URL}?error=auth_initialization_failed`
+    );
+  }
 });
 
 router.get("/callback", async (req, res) => {
@@ -91,14 +106,11 @@ router.get("/callback", async (req, res) => {
     );
   }
 
+  console.log("Cached code:", cached);
   try {
     const encodedCredentials = Buffer.from(
       `${process.env.AIRTABLE_CLIENT_ID}:${process.env.AIRTABLE_CLIENT_SECRET}`
     ).toString("base64");
-
-    console.log("Exchanging code for tokens...");
-    console.log("Code:", code);
-    console.log("Code Verifier:", cached.codeVerifier);
 
     // Exchange code for tokens
     const response = await axios({
@@ -116,45 +128,89 @@ router.get("/callback", async (req, res) => {
       }),
     });
 
-    console.log("Token exchange successful:");
-    console.log("Access Token:", response.data.access_token);
-    console.log("Refresh Token:", response.data.refresh_token);
-    console.log("Scopes:", response.data.scope);
-    console.log("Token Type:", response.data.token_type);
-    console.log("Expires In:", response.data.expires_in);
+    console.log("Token exchange successful");
 
     // Update user with Airtable tokens
     if (cached.userId) {
-      const updatedUser = await User.findByIdAndUpdate(
-        cached.userId,
-        {
-          airtableToken: response.data.access_token,
-          airtableRefreshToken: response.data.refresh_token,
-          airtableScopes: response.data.scope.split(" "),
-        },
-        { new: true }
-      );
+      try {
+        // Get user info from Airtable
+        const userInfoResponse = await axios.get(
+          `https://api.airtable.com/v0/meta/whoami`,
+          {
+            headers: {
+              Authorization: `Bearer ${response.data.access_token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
-      console.log("Updated user in database:", {
-        id: updatedUser._id,
-        scopes: updatedUser.airtableScopes,
-        hasToken: !!updatedUser.airtableToken,
-        hasRefreshToken: !!updatedUser.airtableRefreshToken,
-      });
+        console.log("User info from Airtable:", userInfoResponse.data);
+
+        // Check if a user with this Airtable ID already exists
+        const existingUser = await User.findOne({
+          airtableUserId: userInfoResponse.data.id,
+        });
+
+        let updatedUser;
+        if (existingUser) {
+          // Update existing user
+          console.log("Found existing user, updating:", existingUser._id);
+          updatedUser = await User.findByIdAndUpdate(
+            existingUser._id,
+            {
+              airtableToken: response.data.access_token,
+              airtableRefreshToken: response.data.refresh_token,
+              airtableScopes: response.data.scope.split(" "),
+              displayName: userInfoResponse.data.name || "Airtable User",
+            },
+            { new: true }
+          );
+
+          // Delete the temporary user if it's different
+          if (cached.userId !== existingUser._id.toString()) {
+            console.log("Deleting temporary user:", cached.userId);
+            await User.findByIdAndDelete(cached.userId);
+          }
+        } else {
+          // Update the temporary user with Airtable info
+          console.log("Updating temporary user:", cached.userId);
+          updatedUser = await User.findByIdAndUpdate(
+            cached.userId,
+            {
+              airtableToken: response.data.access_token,
+              airtableRefreshToken: response.data.refresh_token,
+              airtableScopes: response.data.scope.split(" "),
+              airtableUserId: userInfoResponse.data.id,
+              displayName: userInfoResponse.data.name || "Airtable User",
+            },
+            { new: true }
+          );
+        }
+
+        // Store user in session
+        req.session.user = updatedUser;
+        await req.session.save();
+
+        console.log("Updated user session:", {
+          sessionId: req.session.id,
+          userId: updatedUser._id,
+          airtableUserId: updatedUser.airtableUserId,
+        });
+
+        // Wait a moment to ensure session is saved
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } catch (error) {
+        console.error(
+          "Failed to get/update user info:",
+          error.response?.data || error
+        );
+      }
     }
 
-    // Redirect to success page
-    res.redirect(`${process.env.PUBLIC_APP_URL}`);
+    const encodedToken = encodeURIComponent(response.data.access_token);
+    res.redirect(`${process.env.PUBLIC_APP_URL}?airtableToken=${encodedToken}`);
   } catch (error) {
-    console.error("Token exchange error:");
-    console.error("Error response:", error.response?.data);
-    console.error("Error details:", {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      headers: error.response?.headers,
-    });
-    console.error("Full error:", error);
-
+    console.error("Token exchange error:", error.response?.data || error);
     res.redirect(`${process.env.PUBLIC_APP_URL}?error=token_exchange_failed`);
   }
 });
@@ -225,123 +281,20 @@ router.post("/disconnect", async (req, res) => {
     res.status(500).json({ error: "Failed to disconnect Airtable" });
   }
 });
+// Base routes
+router.post("/sync-bases", baseController.syncBases);
+router.get("/user-bases", withAirtableAuth, baseController.getUserBases);
 
-// Protected Airtable routes
-router.get("/bases", withAirtableAuth, async (req, res) => {
-  try {
-    const response = await axios.get("https://api.airtable.com/v0/meta/bases", {
-      headers: {
-        Authorization: `Bearer ${req.airtableToken}`,
-      },
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch bases" });
-  }
-});
-
-// Protected Airtable API routes
-router.get("/records/:baseId/:tableId", withAirtableAuth, async (req, res) => {
-  try {
-    const { baseId, tableId } = req.params;
-    const response = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/${tableId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${req.airtableToken}`,
-        },
-      }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error("Airtable API error:", error.response?.data || error);
-    res.status(error.response?.status || 500).json({
-      error: "Failed to fetch records",
-      details: error.response?.data,
-    });
-  }
-});
-
-router.post("/records/:baseId/:tableId", withAirtableAuth, async (req, res) => {
-  try {
-    const { baseId, tableId } = req.params;
-    const { fields } = req.body;
-
-    const response = await axios.post(
-      `https://api.airtable.com/v0/${baseId}/${tableId}`,
-      {
-        records: [{ fields }],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${req.airtableToken}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error("Airtable API error:", error.response?.data || error);
-    res.status(error.response?.status || 500).json({
-      error: "Failed to create record",
-      details: error.response?.data,
-    });
-  }
-});
-
-router.patch(
-  "/records/:baseId/:tableId/:recordId",
+// Ticket routes
+router.post(
+  "/bases/:baseId/sync-tickets",
   withAirtableAuth,
-  async (req, res) => {
-    try {
-      const { baseId, tableId, recordId } = req.params;
-      const { fields } = req.body;
-
-      const response = await axios.patch(
-        `https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`,
-        { fields },
-        {
-          headers: {
-            Authorization: `Bearer ${req.airtableToken}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      res.json(response.data);
-    } catch (error) {
-      console.error("Airtable API error:", error.response?.data || error);
-      res.status(error.response?.status || 500).json({
-        error: "Failed to update record",
-        details: error.response?.data,
-      });
-    }
-  }
+  ticketController.syncTickets
 );
-
-router.delete(
-  "/records/:baseId/:tableId/:recordId",
+router.get(
+  "/bases/:baseId/tickets",
   withAirtableAuth,
-  async (req, res) => {
-    try {
-      const { baseId, tableId, recordId } = req.params;
-
-      const response = await axios.delete(
-        `https://api.airtable.com/v0/${baseId}/${tableId}/${recordId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${req.airtableToken}`,
-          },
-        }
-      );
-      res.json(response.data);
-    } catch (error) {
-      console.error("Airtable API error:", error.response?.data || error);
-      res.status(error.response?.status || 500).json({
-        error: "Failed to delete record",
-        details: error.response?.data,
-      });
-    }
-  }
+  ticketController.getUserTickets
 );
 
 module.exports = router;

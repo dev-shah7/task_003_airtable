@@ -1,6 +1,52 @@
-<app-header></app-header>
+<div class="app-container">
+  <app-header></app-header>
 
-<div class="content">
-  <h2>Welcome to {{ title }}</h2>
-  <!-- Remove router-outlet since we haven't set up routing yet -->
+  <main class="main-content">
+    <div class="bases-container">
+      <h2>Your Airtable Bases</h2>
+      <div *ngIf="bases.length > 0" class="bases-grid">
+        <div *ngFor="let base of bases" class="base-card">
+          <div class="base-info">
+            <h3>{{ base.name }}</h3>
+            <p class="permission-level">{{ base.permissionLevel }}</p>
+          </div>
+          <div class="button-group">
+            <button
+              class="sync-button"
+              (click)="syncTickets(base.id)"
+              [disabled]="syncStatus.includes('Syncing')"
+            >
+              Sync Tickets
+            </button>
+            <button
+              class="view-button"
+              (click)="loadTickets(base.id, base.name)"
+            >
+              View Tickets
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div *ngIf="bases.length === 0" class="no-bases">
+        <p>No bases found. Please connect to Airtable to see your bases.</p>
+      </div>
+    </div>
+
+    <div class="status-container">
+      <div *ngIf="error" class="error-message">
+        {{ error }}
+      </div>
+      <div *ngIf="syncStatus" class="success-message">
+        {{ syncStatus }}
+      </div>
+    </div>
+
+    <div *ngIf="currentTickets.length > 0" class="tickets-section">
+      <app-tickets
+        [tickets]="currentTickets"
+        [baseName]="currentBaseName"
+      ></app-tickets>
+    </div>
+  </main>
 </div>
