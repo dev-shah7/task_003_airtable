@@ -1,39 +1,53 @@
 import { Component, Inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MatDialogModule, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import {
+  MatDialogModule,
+  MAT_DIALOG_DATA,
+  MatDialogRef,
+} from '@angular/material/dialog';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { switchMap, catchError } from 'rxjs/operators';
 import { of } from 'rxjs';
+import { MatIconModule } from '@angular/material/icon';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
-interface RevisionChange {
-  field: string;
-  oldValue: string;
-  newValue: string;
-}
-
-interface RevisionHistory {
-  timestamp: string;
-  user: string;
-  changes: RevisionChange[];
+interface TicketRevision {
+  activityId: string;
+  issueId: string;
+  columnType: string;
+  oldValue: string | null;
+  newValue: string | null;
+  createdDate: string;
+  authoredBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 @Component({
   selector: 'app-ticket-dialog',
   standalone: true,
-  imports: [CommonModule, MatDialogModule],
+  imports: [
+    CommonModule,
+    MatDialogModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+  ],
   templateUrl: './ticket-dialog.component.html',
   styleUrls: ['./ticket-dialog.component.scss'],
 })
 export class TicketDialogComponent implements OnInit {
-  revisionHistory: any[] = [];
+  revisionHistory: TicketRevision[] = [];
   loading = false;
   error = '';
 
   constructor(
     @Inject(MAT_DIALOG_DATA) public data: any,
+    private dialogRef: MatDialogRef<TicketDialogComponent>,
     private http: HttpClient
-  ) {}
+  ) {
+    this.dialogRef.updateSize('800px', '600px');
+  }
 
   ngOnInit() {
     this.fetchRevisionHistory();
@@ -75,8 +89,8 @@ export class TicketDialogComponent implements OnInit {
       .subscribe({
         next: (response) => {
           console.log('Revision history response:', response);
-          if (response.success && response.revisionHistory) {
-            this.revisionHistory = response.revisionHistory;
+          if (response.success && response.revisions) {
+            this.revisionHistory = response.revisions;
           } else {
             this.error = response.error || 'Failed to fetch revision history';
           }

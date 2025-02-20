@@ -1,25 +1,66 @@
-<h2 mat-dialog-title>Ticket Details - {{ data.ticketId }}</h2>
-<mat-dialog-content>
-  <h3>Revision History</h3>
-  <div *ngIf="loading" class="loading">Loading...</div>
-  <div *ngIf="error" class="error">{{ error }}</div>
-  <div class="revision-list" *ngIf="!loading && !error">
-    <div class="revision-item" *ngFor="let revision of revisionHistory">
-      <div class="revision-header">
-        <span class="timestamp">{{
-          revision.timestamp | date : "medium"
-        }}</span>
-        <span class="user">{{ revision.user }}</span>
-      </div>
-      <div class="change-item" *ngFor="let change of revision.changes">
-        <span class="field">{{ change.field }}</span>
-        <span class="change"
-          >{{ change.oldValue }} → {{ change.newValue }}</span
-        >
+<div class="dialog-container">
+  <h2 mat-dialog-title class="dialog-title">
+    Ticket History
+    <span class="ticket-id">{{ data.airtableId }}</span>
+  </h2>
+
+  <mat-dialog-content class="dialog-content">
+    <div *ngIf="loading" class="loading">
+      <mat-spinner diameter="40"></mat-spinner>
+      <span>Loading revision history...</span>
+    </div>
+
+    <div *ngIf="error" class="error">
+      <mat-icon>error_outline</mat-icon>
+      <span>{{ error }}</span>
+    </div>
+
+    <div class="revision-list" *ngIf="!loading && !error">
+      <div class="revision-item" *ngFor="let revision of revisionHistory">
+        <div class="revision-header">
+          <div class="timestamp">
+            <mat-icon>schedule</mat-icon>
+            <span>{{ revision.createdDate | date : "MMM d, y, h:mm a" }}</span>
+          </div>
+        </div>
+
+        <div class="change-details">
+          <div class="field-label">
+            <span class="field-type">{{ revision.columnType }}</span>
+          </div>
+
+          <div class="change-content">
+            <ng-container
+              *ngIf="revision.oldValue || revision.newValue; else noChange"
+            >
+              <div class="old-value" *ngIf="revision.oldValue">
+                <span class="label">Previous:</span>
+                <span class="value">{{ revision.oldValue }}</span>
+              </div>
+
+              <div
+                class="change-arrow"
+                *ngIf="revision.oldValue && revision.newValue"
+              >
+                <mat-icon>arrow_forward</mat-icon>
+              </div>
+
+              <div class="new-value" *ngIf="revision.newValue">
+                <span class="label">New:</span>
+                <span class="value">{{ revision.newValue }}</span>
+              </div>
+            </ng-container>
+
+            <ng-template #noChange>
+              <div class="no-change">No change recorded</div>
+            </ng-template>
+          </div>
+        </div>
       </div>
     </div>
-  </div>
-</mat-dialog-content>
-<mat-dialog-actions align="end">
-  <button mat-button mat-dialog-close>Close</button>
-</mat-dialog-actions>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end" class="dialog-actions">
+    <button mat-button mat-dialog-close color="primary">Close</button>
+  </mat-dialog-actions>
+</div>
