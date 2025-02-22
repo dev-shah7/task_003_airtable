@@ -1,8 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HeaderComponent } from './components/header/header.component';
 import { TicketsComponent } from './components/tickets/tickets.component';
 import { AirtableService } from './services/airtable.service';
+import { Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-root',
@@ -11,29 +12,36 @@ import { AirtableService } from './services/airtable.service';
   standalone: true,
   imports: [CommonModule, HeaderComponent, TicketsComponent],
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   bases: any[] = [];
   currentTickets: any[] = [];
   currentBaseName: string = '';
   error: string = '';
   syncStatus: string = '';
+  private subscription = new Subscription();
 
-  constructor(private airtableService: AirtableService) {}
+  constructor(private airtableService: AirtableService) {
+    // Subscribe to token changes
+    this.subscription.add(
+      this.airtableService.token$.subscribe((token) => {
+        if (token) {
+          console.log('Token detected, loading bases...');
+          this.loadBases();
+        }
+      })
+    );
+  }
 
   ngOnInit() {
-    console.log('Syncing bases...');
-    this.airtableService.fetchAndStoreBases().subscribe({
-      next: (response) => {
-        console.log('Bases synced successfully:', response);
-        this.loadBases(); // Load bases after sync
-      },
-      error: (error) => {
-        console.error('Error syncing bases:', error);
-        this.error = 'Failed to sync bases';
-        // Still try to load existing bases even if sync fails
-        this.loadBases();
-      },
-    });
+    // Initial load if token exists
+    console.log('hi');
+    if (!!localStorage.getItem('airtableToken')) {
+      this.loadBases();
+    }
+  }
+
+  ngOnDestroy() {
+    this.subscription.unsubscribe();
   }
 
   loadBases() {

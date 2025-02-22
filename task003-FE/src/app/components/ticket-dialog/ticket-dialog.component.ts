@@ -57,50 +57,59 @@ export class TicketDialogComponent implements OnInit {
     this.loading = true;
     console.log('Fetching revision history for ticket:', this.data.airtableId);
 
-    // Get cookies first
-    this.http
-      .get<any>(`${environment.apiUrl}/cookies`, {
-        withCredentials: true,
-      })
-      .pipe(
-        switchMap((cookieResponse) => {
-          console.log('Cookie response:', cookieResponse);
+    const cookiesFetched = localStorage.getItem('cookiesFetched') === 'true';
+    console.log('cookies', cookiesFetched);
 
-          if (!cookieResponse.success) {
-            throw new Error('Failed to get cookies: ' + cookieResponse.error);
-          }
-
-          // Now fetch the revision history
-          return this.http.get<any>(
-            `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
-            {
-              withCredentials: true,
-            }
-          );
-        }),
-        catchError((error) => {
-          console.error('Error fetching history:', error);
-          return of({
-            success: false,
-            error: error.message || 'Failed to fetch revision history',
-          });
+    if (cookiesFetched === true) {
+      console.log('On fetched');
+      // Skip cookies fetch if already done
+      this.fetchHistory();
+    } else {
+      // First time - fetch cookies then history
+      this.http
+        .get<any>(`${environment.apiUrl}/cookies`, {
+          withCredentials: true,
         })
+        .pipe(
+          switchMap((cookieResponse) => {
+            console.log('Cookie response:', cookieResponse);
+            if (!cookieResponse.success) {
+              throw new Error('Failed to get cookies: ' + cookieResponse.error);
+            }
+            localStorage.setItem('cookiesFetched', 'true');
+            return this.http.get<any>(
+              `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
+              { withCredentials: true }
+            );
+          }),
+          catchError((error) => {
+            console.error('Error:', error);
+            return of({
+              success: false,
+              error: error.message || 'Failed to fetch history',
+            });
+          })
+        )
+        .subscribe(this.handleHistoryResponse.bind(this));
+    }
+  }
+
+  private fetchHistory() {
+    this.http
+      .get<any>(
+        `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
+        { withCredentials: true }
       )
-      .subscribe({
-        next: (response) => {
-          console.log('Revision history response:', response);
-          if (response.success && response.revisions) {
-            this.revisionHistory = response.revisions;
-          } else {
-            this.error = response.error || 'Failed to fetch revision history';
-          }
-          this.loading = false;
-        },
-        error: (error) => {
-          console.error('Subscription error:', error);
-          this.error = 'Failed to fetch revision history';
-          this.loading = false;
-        },
-      });
+      .subscribe(this.handleHistoryResponse.bind(this));
+  }
+
+  private handleHistoryResponse(response: any) {
+    console.log('Revision history response:', response);
+    if (response.success && response.revisions) {
+      this.revisionHistory = response.revisions;
+    } else {
+      this.error = response.error || 'Failed to fetch revision history';
+    }
+    this.loading = false;
   }
 }

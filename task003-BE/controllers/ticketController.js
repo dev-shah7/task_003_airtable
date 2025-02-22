@@ -144,17 +144,75 @@ exports.getUserTickets = async (req, res) => {
 
     const userId = req.session.user._id;
     const { baseId } = req.params;
+    const { offset = 0, pageSize: requestedPageSize } = req.query; // Get pageSize from query params
+
+    // Validate and limit pageSize
+    const pageSize = Math.max(parseInt(requestedPageSize) || 15, 1);
 
     if (!baseId) {
       return res.status(400).json({ error: "Base ID is required" });
     }
 
-    const tickets = await Ticket.find({ userId, baseId });
-    console.log(`Found ${tickets.length} tickets for user and base`);
+    // Get auth token from headers
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "No token provided" });
+    }
+    const token = authHeader.split(" ")[1];
+
+    // Fetch tickets from Airtable with pagination
+    const response = await axios.get(
+      `https://api.airtable.com/v0/${baseId}/tickets`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        validateStatus: (status) => status < 500,
+      }
+    );
+
+    if (response.status === 401) {
+      return res.status(401).json({
+        error: "Invalid or expired Airtable token",
+        details: response.data,
+      });
+    }
+
+    if (!response.data.records) {
+      return res.status(500).json({
+        error: "Invalid response from Airtable",
+        details: response.data,
+      });
+    }
+
+    // Map Airtable records to our format
+    const tickets = response.data.records.map((record) => ({
+      airtableId: record.id,
+      title: record.fields.Title || "",
+      description: record.fields.Description || "",
+      priority: record.fields.Priority || "",
+      status: record.fields.Status || "",
+      createdTime: record.fields["Created time"] || null,
+      statusLastChanged: record.fields["Status last changed"] || null,
+      daysToClose: record.fields["Days to close"] || 0,
+      daysUntilSLABreach: record.fields["Days until SLA breach"] || "",
+      daysOverSLA: record.fields["Days over SLA"] || 0,
+      resolutionNotes: record.fields["Resolution notes"] || "",
+      submittedBy: record.fields["Submitted by"] || {},
+      assignee: record.fields.Assignee || {},
+      category: record.fields.Category || [],
+      employeeEquipment: record.fields["Employee Equipment"] || [],
+      ticketId: record.fields.ID || null,
+      userId,
+      baseId,
+    }));
 
     res.json({
       success: true,
       tickets,
+      offset: response.data.offset, // Include offset for next page
+      hasMore: !!response.data.offset, // Boolean indicating if there are more records
     });
   } catch (error) {
     console.error("Failed to fetch user tickets:", error);
@@ -169,13 +227,34 @@ function extractFieldChanges(diffRowHtml) {
   const $ = cheerio.load(diffRowHtml);
   const fieldChanges = {};
 
-  // Extract column type (like Status, Assignee, Priority, etc.)
   const columnType = $(".micro.strong.caps").text().trim();
 
   if (columnType) {
     const columnDataType = $(".historicalCellValue").attr("data-columntype");
 
     switch (columnDataType) {
+      case "collaborator":
+        // Handle collaborator/assignee changes
+        const newAssigneeElement = $(
+          ".greenLight2 .flex-auto.truncate"
+        ).first();
+        const oldAssigneeElement = $(
+          ".strikethrough .flex-auto.truncate"
+        ).first();
+
+        const newAssignee = newAssigneeElement
+          .closest(".flex-inline:not(.strikethrough)")
+          .find(".flex-auto.truncate")
+          .text()
+          .trim();
+        const oldAssignee = oldAssigneeElement.text().trim();
+
+        fieldChanges[columnType] = {
+          oldValue: oldAssignee || null,
+          newValue: newAssignee || null,
+        };
+        break;
+
       case "select":
         // Handle select inputs (Status, Priority)
         const addedValue = $(".greenLight2 .flex-auto.truncate-pre")
@@ -266,7 +345,7 @@ exports.getTicketRevisionHistory = async (req, res) => {
       secretSocketId: `soc${Math.random().toString(36).substring(2, 15)}`,
     };
 
-    const response = await axios.get(
+    let response = await axios.get(
       `https://airtable.com/v0.3/row/${ticketId}/readRowActivitiesAndComments`,
       {
         params,
@@ -288,14 +367,55 @@ exports.getTicketRevisionHistory = async (req, res) => {
     );
 
     if (response.status === 403) {
-      return res.status(403).json({
-        error: "Access forbidden",
-        details:
-          "Unable to access revision history. Please check authentication.",
-      });
+      if (!req.session?.mfaCode) {
+        return res.status(403).json({
+          error: "Authentication required",
+          mfaRequired: true,
+        });
+      }
+
+      // Use the MFA code in your cookie fetching logic
+      await getAirtableCookies(req, res, req.session.mfaCode);
+
+      const newAuthCookies = req.cookies.authCookies
+        ? JSON.parse(req.cookies.authCookies)
+        : null;
+
+      if (!newAuthCookies) {
+        return res.status(400).json({
+          error: "No authentication cookies found after refetching",
+          details: "Please ensure you are logged in",
+        });
+      }
+
+      const newCookieString = Object.entries(newAuthCookies)
+        .map(([name, value]) => `${name}=${value}`)
+        .join("; ");
+
+      response = await axios.get(
+        `https://airtable.com/v0.3/row/${ticketId}/readRowActivitiesAndComments`,
+        {
+          params,
+          headers: {
+            Cookie: newCookieString,
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Airtable-Client": "web",
+            "X-Airtable-Client-Version": "1.0.0",
+            "x-time-zone": "UTC",
+            "x-airtable-application-id": "appA0Q5Vu9k7N0pgv",
+            Origin: "https://airtable.com",
+            Referer: "https://airtable.com/",
+          },
+          maxRedirects: 0,
+          validateStatus: (status) => status < 500,
+        }
+      );
     }
 
     const revisionData = response.data?.data?.rowActivityInfoById || {};
+    console.log("revision data: ", revisionData);
     const formattedRevisions = [];
 
     // Process each activity

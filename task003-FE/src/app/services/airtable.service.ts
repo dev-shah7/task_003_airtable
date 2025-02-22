@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { environment } from '../../environments/environment';
-import { Observable } from 'rxjs';
+import { Observable, BehaviorSubject } from 'rxjs';
 import { tap, catchError, switchMap } from 'rxjs/operators';
 import { of } from 'rxjs';
 
@@ -9,25 +9,12 @@ import { of } from 'rxjs';
   providedIn: 'root',
 })
 export class AirtableService {
-  constructor(private http: HttpClient) {
-    // Check auth status and sync bases on service initialization
-    this.whoami()
-      .pipe(
-        switchMap((response) => {
-          if (response?.authenticated) {
-            console.log('User is authenticated, syncing bases...');
-            return this.fetchAndStoreBases();
-          }
-          console.log('User is not authenticated, skipping base sync');
-          return of(null);
-        }),
-        catchError((error) => {
-          console.error('Error during initial base sync:', error);
-          return of(null);
-        })
-      )
-      .subscribe();
-  }
+  private tokenSubject = new BehaviorSubject<string | null>(
+    localStorage.getItem('airtableToken')
+  );
+  token$ = this.tokenSubject.asObservable();
+
+  constructor(private http: HttpClient) {}
 
   fetchAndStoreBases(): Observable<any> {
     const token = localStorage.getItem('airtableToken');
@@ -168,5 +155,10 @@ export class AirtableService {
           throw error;
         })
       );
+  }
+
+  setToken(token: string) {
+    localStorage.setItem('airtableToken', token);
+    this.tokenSubject.next(token);
   }
 }
