@@ -36,11 +36,53 @@ const getAirtableCookies = async (req, res) => {
     console.log("Submitting login...");
     await Promise.all([
       page.click('button[type="submit"]'),
-      page.waitForNavigation({
-        waitUntil: "networkidle2",
-        timeout: 60000,
-      }),
+      page
+        .waitForNavigation({
+          waitUntil: "networkidle2",
+          timeout: 60000,
+        })
+        .catch(() => {}), // Catch navigation timeout
     ]);
+
+    // Check for "Verify it's you" challenge
+    try {
+      console.log("Checking for verification challenge...");
+      const verifyButton = await page.waitForSelector(
+        'button:has-text("Press and hold button")',
+        {
+          timeout: 5000,
+        }
+      );
+
+      if (verifyButton) {
+        console.log("Found verification button, pressing and holding...");
+        const button = await page.$('button:has-text("Press and hold button")');
+
+        // Simulate press and hold for 3 seconds
+        await page.evaluate((btn) => {
+          return new Promise((resolve) => {
+            // Trigger mousedown
+            btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+
+            // Hold for 3 seconds then trigger mouseup
+            setTimeout(() => {
+              btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+              resolve();
+            }, 3000);
+          });
+        }, button);
+
+        // Wait for verification to complete
+        await page
+          .waitForNavigation({
+            waitUntil: "networkidle2",
+            timeout: 30000,
+          })
+          .catch(() => {});
+      }
+    } catch (verifyError) {
+      console.log("No verification challenge found, continuing...");
+    }
 
     // Add a small delay to ensure cookies are set
     await new Promise((resolve) => setTimeout(resolve, 3000));

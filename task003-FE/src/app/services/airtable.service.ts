@@ -118,7 +118,7 @@ export class AirtableService {
 
     return this.http
       .post(
-        `${this.apiUrl}/airtable/bases/${baseId}/tables/${tableId}/records`,
+        `${this.apiUrl}/airtable/bases/${baseId}/tables/${tableId}/sync-tickets`,
         {},
         {
           headers: new HttpHeaders({

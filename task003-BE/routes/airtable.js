@@ -287,7 +287,7 @@ router.get("/user-bases", withAirtableAuth, baseController.getUserBases);
 
 // Ticket routes
 router.post(
-  "/bases/:baseId/sync-tickets",
+  "/bases/:baseId/tables/:tableId/sync-tickets",
   withAirtableAuth,
   ticketController.syncTickets
 );

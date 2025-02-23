@@ -5,28 +5,26 @@ const TicketRevision = require("../models/TicketRevision");
 
 exports.syncTickets = async (req, res) => {
   console.log("Starting ticket sync...");
-  console.log("Session user:", req.session?.user);
   try {
-    // Extract token and baseId from request
     const authHeader = req.headers.authorization;
-    const { baseId } = req.params;
+    const { baseId, tableId } = req.params;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
     }
 
-    if (!baseId) {
-      return res.status(400).json({ error: "Base ID is required" });
+    if (!baseId || !tableId) {
+      return res
+        .status(400)
+        .json({ error: "Base ID and Table ID are required" });
     }
 
     const token = authHeader.split(" ")[1];
-    console.log("Using token:", token);
-    console.log("Using baseId:", baseId);
 
     try {
       // Fetch tickets from Airtable
       const response = await axios.get(
-        `https://api.airtable.com/v0/${baseId}/tickets`,
+        `https://api.airtable.com/v0/${baseId}/${tableId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -34,12 +32,6 @@ exports.syncTickets = async (req, res) => {
           },
           validateStatus: (status) => status < 500,
         }
-      );
-
-      console.log("Airtable API Response Status:", response.status);
-      console.log(
-        "Airtable API Response Data:",
-        JSON.stringify(response.data, null, 2)
       );
 
       if (response.status === 401) {
@@ -50,7 +42,6 @@ exports.syncTickets = async (req, res) => {
       }
 
       if (!response.data.records) {
-        console.error("Unexpected Airtable response:", response.data);
         return res.status(500).json({
           error: "Invalid response from Airtable",
           details: response.data,
@@ -60,47 +51,74 @@ exports.syncTickets = async (req, res) => {
       // Store tickets in MongoDB
       if (req.session?.user?._id) {
         const userId = req.session.user._id;
-        console.log("Using session user ID:", userId);
 
-        // Delete existing tickets for this user and base
-        const deleteResult = await Ticket.deleteMany({ userId, baseId });
-        console.log("Delete result:", deleteResult);
+        // Delete existing tickets for this user, base and table
+        await Ticket.deleteMany({ userId, baseId, tableId });
 
         // Map Airtable records to ticket documents
-        const ticketsToCreate = response.data.records.map((record) => {
-          console.log("Processing record:", record.id);
-          return {
-            airtableId: record.id,
-            title: record.fields.Title || "",
-            description: record.fields.Description || "",
-            priority: record.fields.Priority || "",
-            status: record.fields.Status || "",
-            createdTime: record.fields["Created time"] || null,
-            statusLastChanged: record.fields["Status last changed"] || null,
-            daysToClose: record.fields["Days to close"] || 0,
-            daysUntilSLABreach: record.fields["Days until SLA breach"] || "",
-            daysOverSLA: record.fields["Days over SLA"] || 0,
-            resolutionNotes: record.fields["Resolution notes"] || "",
-            submittedBy: record.fields["Submitted by"] || {},
-            assignee: record.fields.Assignee || {},
-            category: record.fields.Category || [],
-            employeeEquipment: record.fields["Employee Equipment"] || [],
-            ticketId: record.fields.ID || null,
-            userId,
-            baseId,
-          };
-        });
-
-        console.log(
-          "Tickets to create:",
-          JSON.stringify(ticketsToCreate, null, 2)
-        );
+        const ticketsToCreate = response.data.records.map((record) => ({
+          airtableId: record.id,
+          baseId,
+          tableId,
+          userId,
+          fields: new Map(Object.entries(record.fields)),
+          createdTime: record.createdTime,
+          lastModifiedTime: record.lastModifiedTime,
+        }));
 
         try {
           const createdTickets = await Ticket.insertMany(ticketsToCreate, {
             ordered: false,
           });
-          console.log(`Successfully created ${createdTickets.length} tickets`);
+
+          // Fetch and store revision history for each ticket
+          for (const ticket of createdTickets) {
+            try {
+              const revisionResponse = await axios.get(
+                `https://airtable.com/v0.3/row/${ticket.airtableId}/readRowActivitiesAndComments`,
+                {
+                  params: {
+                    stringifiedObjectParams: JSON.stringify({
+                      limit: 100,
+                      offset: null,
+                      shouldReturnDeserializedActivityItems: true,
+                      shouldIncludeRowActivityOrCommentUserObjById: true,
+                    }),
+                  },
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              if (revisionResponse.data?.data?.rowActivityInfoById) {
+                const revisions = Object.entries(
+                  revisionResponse.data.data.rowActivityInfoById
+                )
+                  .map(([activityId, activity]) => {
+                    const changes = extractFieldChanges(activity.diffRowHtml);
+                    return {
+                      activityId,
+                      issueId: ticket.airtableId,
+                      ...changes[Object.keys(changes)[0]],
+                      createdDate: new Date(activity.createdTime),
+                      authoredBy: activity.originatingUserId,
+                    };
+                  })
+                  .filter((revision) => revision.oldValue || revision.newValue);
+
+                if (revisions.length > 0) {
+                  await TicketRevision.insertMany(revisions);
+                }
+              }
+            } catch (revisionError) {
+              console.error(
+                `Error fetching revisions for ticket ${ticket.airtableId}:`,
+                revisionError
+              );
+            }
+          }
 
           res.json({
             success: true,
@@ -108,16 +126,9 @@ exports.syncTickets = async (req, res) => {
           });
         } catch (dbError) {
           console.error("Database error while creating tickets:", dbError);
-          // If some documents were inserted before the error
-          if (dbError.insertedDocs?.length > 0) {
-            console.log(
-              `Partially successful: ${dbError.insertedDocs.length} tickets created`
-            );
-          }
           throw dbError;
         }
       } else {
-        console.log("No user ID found in session");
         res.status(401).json({ error: "User not authenticated" });
       }
     } catch (apiError) {
@@ -253,119 +264,129 @@ exports.getUserTickets = async (req, res) => {
   }
 };
 
-// Helper function to build Airtable filter formula
-function buildFilterFormula(filterModel) {
-  const conditions = [];
-
-  for (const [field, filter] of Object.entries(filterModel)) {
-    switch (filter.type) {
-      case "equals":
-        conditions.push(`{${field}} = "${filter.value}"`);
-        break;
-      case "contains":
-        conditions.push(`FIND("${filter.value}", {${field}}) > 0`);
-        break;
-      case "startsWith":
-        conditions.push(
-          `LEFT({${field}}, ${filter.value.length}) = "${filter.value}"`
-        );
-        break;
-      // Add more filter types as needed
-    }
-  }
-
-  return conditions.length > 0 ? `AND(${conditions.join(",")})` : "";
-}
-
 function extractFieldChanges(diffRowHtml) {
-  const $ = cheerio.load(diffRowHtml);
-  const fieldChanges = {};
+  try {
+    const $ = cheerio.load(diffRowHtml);
+    const changes = {};
 
-  const columnType = $(".micro.strong.caps").text().trim();
+    // Get the column type and ID
+    const columnHeader = $(".micro.strong");
+    const columnType = columnHeader.text().trim();
+    const columnId = columnHeader.attr("columnId");
+    const dataColumnType = $(".historicalCellValue").attr("data-columntype");
 
-  if (columnType) {
-    const columnDataType = $(".historicalCellValue").attr("data-columntype");
+    if (!columnType) return changes;
 
-    switch (columnDataType) {
-      case "collaborator":
-        // Handle collaborator/assignee changes
-        const newAssigneeElement = $(
-          ".greenLight2 .flex-auto.truncate"
-        ).first();
-        const oldAssigneeElement = $(
-          ".strikethrough .flex-auto.truncate"
-        ).first();
+    switch (dataColumnType) {
+      case "select":
+        // Handle select fields (Status, Priority, etc.)
+        const tokens = $(".cellToken");
+        let oldValue = null;
+        let newValue = null;
 
-        const newAssignee = newAssigneeElement
-          .closest(".flex-inline:not(.strikethrough)")
-          .find(".flex-auto.truncate")
-          .text()
-          .trim();
-        const oldAssignee = oldAssigneeElement.text().trim();
+        tokens.each((i, elem) => {
+          const $token = $(elem);
+          const isRemoved = $token.css("text-decoration") === "line-through";
+          const value = $token
+            .find(".flex-auto.truncate-pre")
+            .attr("title")
+            ?.trim();
 
-        fieldChanges[columnType] = {
-          oldValue: oldAssignee || null,
-          newValue: newAssignee || null,
+          if (isRemoved) {
+            oldValue = value;
+          } else {
+            newValue = value;
+          }
+        });
+
+        changes[columnType] = {
+          oldValue,
+          newValue,
+          columnId,
+          type: dataColumnType,
         };
         break;
 
-      case "select":
-        // Handle select inputs (Status, Priority)
-        const addedValue = $(".greenLight2 .flex-auto.truncate-pre")
+      case "text":
+      case "multilineText":
+        // Handle text and multiline text fields
+        const oldText = $(".text-red-dark1.strikethrough").text().trim();
+        const newText = $(".greenLight2").not(".strikethrough").text().trim();
+        const unchangedText = $(".unchangedPart").text().trim();
+
+        changes[columnType] = {
+          oldValue: oldText ? `${unchangedText} ${oldText}`.trim() : null,
+          newValue: newText ? `${unchangedText} ${newText}`.trim() : null,
+          columnId,
+          type: dataColumnType,
+        };
+        break;
+
+      case "collaborator":
+        // Handle collaborator fields (Assignee)
+        const oldCollaborator = $(".strikethrough .flex-auto.truncate")
           .text()
           .trim();
-        const removedValue = $(
-          ".grayLight2 .flex-auto.truncate-pre, .redLight2 .flex-auto.truncate-pre"
+        const newCollaborator = $(
+          ".cellToken:not(.strikethrough) .flex-auto.truncate"
         )
           .text()
           .trim();
-        fieldChanges[columnType] = {
-          oldValue: removedValue || null,
-          newValue: addedValue || null,
-        };
-        break;
 
-      case "multilineText":
-        // Handle multiline text fields (Description)
-        const oldText = $(".text-red-dark1.strikethrough").text().trim();
-        const newText = $(".greenLight2").text().trim();
-        fieldChanges[columnType] = {
-          oldValue: oldText || null,
-          newValue: newText || null,
-        };
-        break;
-
-      case "richText":
-        // Handle rich text fields (Resolution notes)
-        const richText = $(".richText.greenLight2").text().trim();
-        fieldChanges[columnType] = {
-          oldValue: null,
-          newValue: richText || null,
+        changes[columnType] = {
+          oldValue: oldCollaborator || null,
+          newValue: newCollaborator || null,
+          columnId,
+          type: dataColumnType,
         };
         break;
 
       case "date":
-        // Handle date fields (Closed at)
-        const dateValue = $(".greenLight2 .flex.flex-auto").text().trim();
-        fieldChanges[columnType] = {
-          oldValue: null,
-          newValue: dateValue || null,
+        // Handle date fields
+        const oldDate = $(".text-red-dark1.strikethrough .flex.flex-auto")
+          .text()
+          .trim();
+        const newDate = $(".greenLight2 .flex.flex-auto").text().trim();
+
+        changes[columnType] = {
+          oldValue: oldDate || null,
+          newValue: newDate || null,
+          columnId,
+          type: dataColumnType,
         };
         break;
 
       default:
-        // Default handler for other field types
-        const oldValue = $(".text-red-dark1").text().trim();
-        const newValue = $(".greenLight2").text().trim();
-        fieldChanges[columnType] = {
-          oldValue: oldValue || null,
-          newValue: newValue || null,
-        };
+        // Handle new field creation or other types
+        if ($(".historicalCellValue.nullToValue").length) {
+          const newValue = $(".greenLight2").text().trim();
+          changes[columnType] = {
+            oldValue: null,
+            newValue: newValue || null,
+            columnId,
+            type: dataColumnType || "text",
+          };
+        } else {
+          const oldValue = $(".text-red-dark1").text().trim();
+          const newValue = $(".greenLight2")
+            .not(".strikethrough")
+            .text()
+            .trim();
+          changes[columnType] = {
+            oldValue: oldValue || null,
+            newValue: newValue || null,
+            columnId,
+            type: dataColumnType || "text",
+          };
+        }
     }
-  }
 
-  console.log(`Extracted changes for ${columnType}:`, fieldChanges[columnType]);
-  return fieldChanges;
+    console.log(`Extracted changes for ${columnType}:`, changes[columnType]);
+    return changes;
+  } catch (error) {
+    console.error("Error extracting field changes:", error);
+    return {};
+  }
 }
 
 exports.getTicketRevisionHistory = async (req, res) => {
@@ -469,6 +490,7 @@ exports.getTicketRevisionHistory = async (req, res) => {
     }
 
     const revisionData = response.data?.data?.rowActivityInfoById || {};
+    console.log("response: ", JSON.stringify(response.data, null, 2));
     console.log("revision data: ", revisionData);
     const formattedRevisions = [];
 
