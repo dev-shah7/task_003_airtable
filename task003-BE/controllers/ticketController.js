@@ -143,7 +143,7 @@ exports.getUserTickets = async (req, res) => {
     }
 
     const userId = req.session.user._id;
-    const { baseId } = req.params;
+    const { baseId, tableId } = req.params;
     const {
       pageSize = 5,
       offset,
@@ -152,48 +152,35 @@ exports.getUserTickets = async (req, res) => {
       filterModel,
     } = req.query;
 
-    if (!baseId) {
-      return res.status(400).json({ error: "Base ID is required" });
+    if (!baseId || !tableId) {
+      return res
+        .status(400)
+        .json({ error: "Base ID and Table ID are required" });
     }
 
-    // Get auth token from headers
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
     }
     const token = authHeader.split(" ")[1];
 
-    // Build query parameters
-    const queryParams = new URLSearchParams({
-      pageSize: Math.min(parseInt(pageSize), 100).toString(),
-    });
-
-    // Add offset if provided
-    if (offset) {
-      queryParams.append("offset", offset);
-    }
-
-    // Add sorting if provided
-    if (sortField && sortDirection) {
-      queryParams.append("sort[0][field]", sortField);
-      queryParams.append("sort[0][direction]", sortDirection);
-    }
-
-    // Add filtering if provided
-    if (filterModel) {
-      const formula = buildFilterFormula(filterModel);
-      if (formula) {
-        queryParams.append("filterByFormula", formula);
-      }
-    }
-
-    // Fetch tickets from Airtable with pagination
+    // Update Airtable API endpoint to use tableId
     const response = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/tickets?${queryParams.toString()}`,
+      `https://api.airtable.com/v0/${baseId}/${tableId}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
+        },
+        params: {
+          pageSize: Math.min(parseInt(pageSize), 100),
+          offset,
+          ...(sortField &&
+            sortDirection && {
+              sort: JSON.stringify([
+                { field: sortField, direction: sortDirection },
+              ]),
+            }),
         },
         validateStatus: (status) => status < 500,
       }
@@ -213,40 +200,43 @@ exports.getUserTickets = async (req, res) => {
       });
     }
 
-    // Map Airtable records to our format
-    const tickets = response.data.records.map((record) => ({
+    // Map records with dynamic fields
+    const records = response.data.records.map((record) => ({
       airtableId: record.id,
-      title: record.fields.Title || "",
-      description: record.fields.Description || "",
-      priority: record.fields.Priority || "",
-      status: record.fields.Status || "",
-      createdTime: record.fields["Created time"] || null,
-      statusLastChanged: record.fields["Status last changed"] || null,
-      daysToClose: record.fields["Days to close"] || 0,
-      daysUntilSLABreach: record.fields["Days until SLA breach"] || "",
-      daysOverSLA: record.fields["Days over SLA"] || 0,
-      resolutionNotes: record.fields["Resolution notes"] || "",
-      submittedBy: record.fields["Submitted by"] || {},
-      assignee: record.fields.Assignee || {},
-      category: record.fields.Category || [],
-      employeeEquipment: record.fields["Employee Equipment"] || [],
-      ticketId: record.fields.ID || null,
-      userId,
       baseId,
+      tableId,
+      userId,
+      fields: record.fields,
+      createdTime: record.fields["Created time"] || null,
+      lastModifiedTime: record.fields["Last modified time"] || null,
     }));
 
-    // Store new tickets in MongoDB if they don't exist
-    for (const ticket of tickets) {
-      await Ticket.findOneAndUpdate({ airtableId: ticket.airtableId }, ticket, {
+    // Store in MongoDB
+    for (const record of records) {
+      await Ticket.findOneAndUpdate({ airtableId: record.airtableId }, record, {
         upsert: true,
         new: true,
       });
     }
 
-    // Return paginated response
+    // Get field metadata for the grid
+    const fieldMetadata = Object.keys(records[0]?.fields || {}).map(
+      (fieldName) => ({
+        field: fieldName,
+        headerName: fieldName,
+        // Add default column configuration
+        sortable: true,
+        filter: true,
+        resizable: true,
+      })
+    );
+
     res.json({
       success: true,
-      data: tickets,
+      data: records,
+      metadata: {
+        fields: fieldMetadata,
+      },
       pagination: {
         offset: response.data.offset,
         hasMore: !!response.data.offset,
@@ -255,9 +245,9 @@ exports.getUserTickets = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Failed to fetch user tickets:", error);
+    console.error("Failed to fetch records:", error);
     res.status(500).json({
-      error: "Failed to fetch tickets",
+      error: "Failed to fetch records",
       details: error.message,
     });
   }

@@ -1,4 +1,4 @@
-import { Component, Input, OnChanges, ViewChild } from '@angular/core';
+import { Component, Input, OnChanges, ViewChild, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AgGridModule, AgGridAngular } from 'ag-grid-angular';
 import {
@@ -23,6 +23,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { FormsModule } from '@angular/forms';
 import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 import { AirtableService } from '../../services/airtable.service';
+import { LoaderComponent } from '../shared/loader/loader.component';
 
 // Register AG Grid Modules
 ModuleRegistry.registerModules([
@@ -48,11 +49,12 @@ ModuleRegistry.registerModules([
     MatIconModule,
     MatButtonModule,
     FormsModule,
+    LoaderComponent,
   ],
   templateUrl: './tickets.component.html',
   styleUrls: ['./tickets.component.scss'],
 })
-export class TicketsComponent implements OnChanges {
+export class TicketsComponent implements OnInit, OnChanges {
   @ViewChild(AgGridAngular) agGrid!: AgGridAngular;
   @Input() tickets: any[] = [];
   @Input() baseName: string = '';
@@ -80,7 +82,7 @@ export class TicketsComponent implements OnChanges {
   private hasMore = false;
   private loading = false;
 
-  private readonly DEFAULT_PAGE_SIZE = 5;
+  private readonly DEFAULT_PAGE_SIZE = 10;
 
   private gridApi: any;
   private paginationState = {
@@ -104,7 +106,7 @@ export class TicketsComponent implements OnChanges {
 
   gridOptions: GridOptions = {
     pagination: true,
-    paginationPageSize: this.DEFAULT_PAGE_SIZE,
+    paginationPageSize: 10,
     paginationPageSizeSelector: [5, 25, 50, 100],
     domLayout: 'autoHeight',
     animateRows: true,
@@ -114,15 +116,6 @@ export class TicketsComponent implements OnChanges {
     paginationAutoPageSize: false,
     onGridReady: (params) => {
       this.gridApi = params.api;
-
-      // If we already have data, update the grid
-      if (this.tickets?.length > 0) {
-        this.updateGrid(this.tickets);
-      }
-      // If we don't have data but have pagination info, fetch initial data
-      else if (this.pagination && this.baseId) {
-        this.fetchInitialData();
-      }
     },
     onPaginationChanged: (params) => {
       if (!this.gridApi) return;
@@ -130,21 +123,8 @@ export class TicketsComponent implements OnChanges {
       const newPageSize = this.gridApi.paginationGetPageSize();
       const currentPage = this.gridApi.paginationGetCurrentPage();
 
-      console.log('Pagination changed:', {
-        currentPage,
-        newPageSize,
-        hasMore: this.paginationState.hasMore,
-        offset: this.paginationState.offset,
-      });
-
-      // Handle page size change
-      if (newPageSize !== this.paginationState.pageSize) {
-        this.onPageSizeChanged(newPageSize);
-        return;
-      }
-
       // Handle page navigation
-      if (this.paginationState.hasMore && this.isLastPage()) {
+      if (this.shouldFetchNextPage()) {
         this.fetchNextPage();
       }
     },
@@ -152,53 +132,62 @@ export class TicketsComponent implements OnChanges {
     ensureDomOrder: true,
   };
 
-  columnDefs: ColDef[] = [
-    {
-      field: 'ticketId',
-      headerName: 'ID',
-      width: 100,
-      filter: 'agNumberColumnFilter',
-    },
-    {
-      field: 'title',
-      headerName: 'Title',
-      flex: 2,
-      filter: 'agTextColumnFilter',
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      width: 120,
-      filter: 'agSetColumnFilter',
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      width: 120,
-      filter: 'agSetColumnFilter',
-    },
-    {
-      field: 'submittedBy.name',
-      headerName: 'Submitted By',
-      width: 150,
-      filter: 'agTextColumnFilter',
-    },
-    {
-      field: 'assignee.name',
-      headerName: 'Assignee',
-      width: 150,
-      filter: 'agTextColumnFilter',
-      valueGetter: (params) => params.data.assignee?.name || 'Unassigned',
-    },
-    {
-      field: 'createdTime',
-      headerName: 'Created',
-      width: 160,
-      filter: 'agDateColumnFilter',
-      valueFormatter: (params) =>
-        params.value ? new Date(params.value).toLocaleString() : '',
-    },
-  ];
+  private shouldFetchNextPage(): boolean {
+    if (!this.gridApi || !this.paginationState.hasMore) return false;
+
+    const currentPage = this.gridApi.paginationGetCurrentPage();
+    const pageSize = this.gridApi.paginationGetPageSize();
+    const totalLoadedRows = this.tickets.length;
+    const currentLastRow = (currentPage + 1) * pageSize;
+
+    // Fetch next page when we're on the last loaded page and there's more data
+    return currentLastRow >= totalLoadedRows && this.paginationState.hasMore;
+  }
+
+  columnDefs: ColDef[] = [];
+
+  private setupColumns(fields: any[]) {
+    this.columnDefs = fields.map((field) => {
+      const colDef: ColDef = {
+        field: `fields.${field.field}`,
+        headerName: field.headerName,
+        sortable: true,
+        filter: true,
+        resizable: true,
+        width: 150,
+      };
+
+      // Special handling for specific field types
+      if (
+        field.field === 'Created time' ||
+        field.field.includes('time') ||
+        field.field.includes('date')
+      ) {
+        colDef.filter = 'agDateColumnFilter';
+        colDef.valueFormatter = (params) =>
+          params.value ? new Date(params.value).toLocaleString() : '';
+      }
+
+      // Handle nested objects like Submitted by, Assignee
+      if (field.field === 'Submitted by' || field.field === 'Assignee') {
+        colDef.field = `fields.${field.field}.name`;
+        colDef.valueGetter = (params) =>
+          params.data.fields[field.field]?.name || 'Unassigned';
+      }
+
+      return colDef;
+    });
+  }
+
+  bases: any[] = [];
+  tables: any[] = [];
+  selectedBaseId: string = '';
+  selectedTableId: string = '';
+  showGrid: boolean = false;
+  isLoadingBases: boolean = false;
+  isLoadingTables: boolean = false;
+  isLoadingTickets: boolean = false;
+  isSyncing: boolean = false;
 
   constructor(
     private dialog: MatDialog,
@@ -206,93 +195,57 @@ export class TicketsComponent implements OnChanges {
   ) {}
 
   ngOnInit() {
-    console.log('Component initialized with:', {
-      tickets: this.tickets,
-      pagination: this.pagination,
-      baseId: this.baseId,
-    });
-
-    // Initialize pagination state if we have initial data
-    if (this.pagination) {
-      this.paginationState = {
-        currentPage: 0,
-        pageSize: this.pagination.pageSize,
-        offset: this.pagination.offset,
-        hasMore: this.pagination.hasMore,
-        totalRecords: this.pagination.totalRecords,
-      };
-
-      // Fetch initial data if we have baseId
-      if (this.baseId) {
-        this.fetchInitialData();
-      }
-    }
+    this.loadBases();
   }
 
   ngOnChanges() {
-    console.log('Tickets changed:', this.tickets);
-    if (this.tickets?.length > 0 && this.pagination) {
-      // Update pagination state from parent component
-      this.paginationState = {
-        currentPage: 0,
-        pageSize: this.pagination.pageSize,
-        offset: this.pagination.offset,
-        hasMore: this.pagination.hasMore,
-        totalRecords: this.pagination.totalRecords,
-      };
-      this.updateGrid(this.tickets);
-    }
+    // No changes to handle in ngOnChanges
   }
 
-  private onPageSizeChanged(newPageSize: number) {
-    if (!this.gridApi) return;
+  private fetchNextPage() {
+    // Prevent multiple simultaneous requests
+    if (this.isLoadingTickets) return;
 
-    console.log('Page size changed to:', newPageSize);
-    this.paginationState.pageSize = newPageSize;
-    this.paginationState.offset = null;
-    this.fetchTickets();
-  }
-
-  private fetchTickets() {
-    if (!this.baseId) {
-      console.error('No baseId provided');
+    if (
+      !this.paginationState.hasMore ||
+      !this.selectedBaseId ||
+      !this.selectedTableId ||
+      !this.paginationState.offset
+    ) {
       return;
     }
 
+    this.isLoadingTickets = true;
     const queryParams = new URLSearchParams({
       pageSize: this.paginationState.pageSize.toString(),
+      offset: this.paginationState.offset,
     });
 
-    if (this.paginationState.offset) {
-      queryParams.append('offset', this.paginationState.offset);
-    }
-
-    console.log('Fetching tickets with params:', queryParams.toString());
-
     this.airtableService
-      .getTickets(this.baseId, queryParams.toString())
+      .getTickets(
+        this.selectedBaseId,
+        this.selectedTableId,
+        queryParams.toString()
+      )
       .subscribe({
         next: (response: any) => {
-          console.log('Received response:', response);
           if (response.success) {
-            this.tickets = response.data; // Update the tickets array
-            this.paginationState.offset = response.pagination.offset;
-            this.paginationState.hasMore = response.pagination.hasMore;
+            // Append new data to existing data
+            this.tickets = [...this.tickets, ...response.data];
+            this.paginationState = {
+              ...this.paginationState,
+              offset: response.pagination.offset,
+              hasMore: response.pagination.hasMore,
+            };
             this.refreshGrid();
           }
+          this.isLoadingTickets = false;
         },
         error: (error) => {
-          console.error('Error fetching tickets:', error);
+          console.error('Error fetching next page:', error);
+          this.isLoadingTickets = false;
         },
       });
-  }
-
-  private isLastPage(): boolean {
-    if (!this.gridApi) return false;
-    const currentPage = this.gridApi.paginationGetCurrentPage();
-    const pageSize = this.gridApi.paginationGetPageSize();
-    const totalRows = this.tickets.length;
-    return (currentPage + 1) * pageSize >= totalRows;
   }
 
   private refreshGrid() {
@@ -302,137 +255,29 @@ export class TicketsComponent implements OnChanges {
     }
 
     try {
-      console.log('Refreshing grid with', this.tickets.length, 'tickets');
+      // Get current page and page size
+      const currentPage = this.gridApi.paginationGetCurrentPage();
+      const pageSize = this.gridApi.paginationGetPageSize();
 
-      // Update the grid with all data
-      this.gridApi.setRowData(this.tickets);
+      // Update the row data
+      this.gridApi.setGridOption('rowData', this.tickets);
 
-      // Calculate total rows including potential next page
+      // Update total row count for pagination
       const totalRows = this.paginationState.hasMore
-        ? this.tickets.length + this.paginationState.pageSize
+        ? this.tickets.length + pageSize
         : this.tickets.length;
 
-      // Update pagination state
-      this.gridApi.paginationGoToPage(this.paginationState.currentPage);
-
-      // Enable/disable next button based on hasMore
-      const paginationProxy = this.gridApi.paginationProxy;
-      if (paginationProxy) {
-        paginationProxy.setRowCount(totalRows);
+      // Update pagination
+      if (this.gridApi.paginationProxy) {
+        this.gridApi.paginationProxy.setRowCount(totalRows);
+        this.gridApi.paginationGoToPage(currentPage);
       }
 
-      console.log('Grid refresh complete.', {
-        totalRows,
-        hasMore: this.paginationState.hasMore,
-        offset: this.paginationState.offset,
-        currentPage: this.paginationState.currentPage,
-      });
+      // Refresh the view
+      this.gridApi.refreshCells({ force: true });
     } catch (error) {
       console.error('Error refreshing grid:', error);
     }
-  }
-
-  private fetchNextPage() {
-    if (
-      !this.paginationState.hasMore ||
-      !this.baseId ||
-      !this.paginationState.offset
-    ) {
-      console.log('No more pages to fetch or missing data:', {
-        hasMore: this.paginationState.hasMore,
-        baseId: this.baseId,
-        offset: this.paginationState.offset,
-      });
-      return;
-    }
-
-    const queryParams = new URLSearchParams({
-      pageSize: this.paginationState.pageSize.toString(),
-      offset: this.paginationState.offset,
-    });
-
-    console.log('Fetching next page with params:', queryParams.toString());
-
-    this.airtableService
-      .getTickets(this.baseId, queryParams.toString())
-      .subscribe({
-        next: (response: any) => {
-          console.log('Received next page response:', response);
-          if (response.success) {
-            // Append new data to existing data
-            this.tickets = [...this.tickets, ...response.data];
-            this.paginationState.offset = response.pagination.offset;
-            this.paginationState.hasMore = response.pagination.hasMore;
-            this.paginationState.currentPage =
-              this.gridApi.paginationGetCurrentPage();
-            this.refreshGrid();
-          }
-        },
-        error: (error) => {
-          console.error('Error fetching next page:', error);
-        },
-      });
-  }
-
-  private updateGrid(data: any[]) {
-    if (!this.gridApi) {
-      console.warn('Grid API not ready');
-      return;
-    }
-
-    try {
-      const rowData = Array.isArray(data) ? data : [];
-      console.log('Setting initial grid data:', rowData.length, 'rows');
-
-      // Set the total row count for proper pagination
-      const totalRows = this.paginationState.hasMore
-        ? rowData.length + this.paginationState.pageSize
-        : rowData.length;
-
-      this.gridApi.paginationSetPageSize(this.paginationState.pageSize);
-      this.gridApi.setRowData(rowData);
-
-      // Enable/disable next button based on hasMore
-      const paginationProxy = this.gridApi.paginationProxy;
-      if (paginationProxy) {
-        paginationProxy.setRowCount(totalRows);
-      }
-
-      console.log(
-        'Initial grid setup complete. Has more:',
-        this.paginationState.hasMore
-      );
-    } catch (error) {
-      console.error('Error updating grid:', error);
-    }
-  }
-
-  private fetchInitialData() {
-    const queryParams = new URLSearchParams({
-      pageSize: this.paginationState.pageSize.toString(),
-    });
-
-    console.log('Fetching initial data with params:', queryParams.toString());
-
-    this.airtableService
-      .getTickets(this.baseId, queryParams.toString())
-      .subscribe({
-        next: (response: any) => {
-          console.log('Received initial response:', response);
-          if (response.success) {
-            this.tickets = response.data;
-            this.paginationState.offset = response.pagination.offset;
-            this.paginationState.hasMore = response.pagination.hasMore;
-
-            if (this.gridApi) {
-              this.refreshGrid();
-            }
-          }
-        },
-        error: (error) => {
-          console.error('Error fetching initial data:', error);
-        },
-      });
   }
 
   // Add new properties for menu
@@ -446,5 +291,109 @@ export class TicketsComponent implements OnChanges {
       width: '400px',
       data: event.data,
     });
+  }
+
+  loadBases() {
+    this.isLoadingBases = true;
+    this.airtableService.getUserBases().subscribe({
+      next: (response: any) => {
+        this.bases = response.bases || [];
+        this.isLoadingBases = false;
+      },
+      error: (error) => {
+        console.error('Error loading bases:', error);
+        this.isLoadingBases = false;
+      },
+    });
+  }
+
+  onBaseSelect(baseId: string) {
+    this.isLoadingTables = true;
+    this.selectedBaseId = baseId;
+    this.selectedTableId = '';
+    this.showGrid = false;
+    this.tables = [];
+
+    this.airtableService.getBaseTables(baseId).subscribe({
+      next: (response: any) => {
+        this.tables = response.tables || [];
+        this.isLoadingTables = false;
+      },
+      error: (error) => {
+        console.error('Error loading tables:', error);
+        this.isLoadingTables = false;
+      },
+    });
+  }
+
+  onTableSelect(tableId: string) {
+    this.selectedTableId = tableId;
+    this.showGrid = false;
+  }
+
+  syncTickets() {
+    this.isSyncing = true;
+    if (!this.selectedBaseId || !this.selectedTableId) return;
+
+    this.airtableService
+      .syncTickets(this.selectedBaseId, this.selectedTableId)
+      .subscribe({
+        next: (response: any) => {
+          console.log('Tickets synced successfully');
+          this.loadTickets();
+          this.isSyncing = false;
+        },
+        error: (error) => {
+          console.error('Error syncing tickets:', error);
+          this.isSyncing = false;
+        },
+      });
+  }
+
+  viewTickets() {
+    if (!this.selectedBaseId || !this.selectedTableId) return;
+
+    this.showGrid = true;
+    this.loadTickets();
+  }
+
+  private loadTickets() {
+    if (this.isLoadingTickets) return;
+    this.isLoadingTickets = true;
+
+    this.airtableService
+      .getUserTickets(this.selectedBaseId, this.selectedTableId)
+      .subscribe({
+        next: (response: any) => {
+          this.isLoadingTickets = false;
+          if (response.success) {
+            this.tickets = response.data;
+            if (response.metadata?.fields) {
+              this.setupColumns(response.metadata.fields);
+            }
+            if (response.pagination) {
+              this.paginationState = {
+                currentPage: 0,
+                pageSize: response.pagination.pageSize,
+                offset: response.pagination.offset,
+                hasMore: response.pagination.hasMore,
+                totalRecords: response.pagination.totalRecords,
+              };
+            }
+            if (this.gridApi) {
+              this.refreshGrid();
+            }
+          } else {
+            console.error('Failed to load tickets:', response);
+          }
+        },
+        error: (error) => {
+          console.error('Error loading tickets:', error);
+          this.isLoadingTickets = false;
+        },
+        complete: () => {
+          this.isLoadingTickets = false;
+        },
+      });
   }
 }

@@ -1,3 +1,139 @@
+.container {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+// Dropdown Styling
+.mb-4 {
+  margin-bottom: 1.5rem;
+
+  label {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #374151;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+
+  .form-select {
+    width: 100%;
+    padding: 0.625rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background-color: #fff;
+    font-size: 0.875rem;
+    color: #1f2937;
+    transition: border-color 0.15s ease-in-out;
+
+    &:focus {
+      border-color: #3b82f6;
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
+    &:hover {
+      border-color: #9ca3af;
+    }
+  }
+}
+
+// Button Styling
+.btn {
+  padding: 0.625rem 1rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  border: none;
+
+  &.btn-primary {
+    background-color: #3b82f6;
+    color: white;
+
+    &:hover {
+      background-color: #2563eb;
+    }
+  }
+
+  &.btn-secondary {
+    background-color: #6b7280;
+    color: white;
+
+    &:hover {
+      background-color: #4b5563;
+    }
+  }
+
+  &.me-2 {
+    margin-right: 0.5rem;
+  }
+}
+
+// AG Grid Styling
+:host ::ng-deep .ag-theme-alpine {
+  --ag-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --ag-font-size: 13px;
+  --ag-header-height: 48px;
+  --ag-header-foreground-color: #374151;
+  --ag-header-background-color: #f9fafb;
+  --ag-header-cell-hover-background-color: #f3f4f6;
+  --ag-row-hover-color: #f3f4f6;
+  --ag-selected-row-background-color: rgba(59, 130, 246, 0.1);
+  --ag-row-border-color: #e5e7eb;
+  --ag-cell-horizontal-padding: 1rem;
+
+  .ag-header-cell {
+    font-weight: 600;
+  }
+
+  .ag-row {
+    border-bottom-style: solid;
+    border-bottom-width: 1px;
+    border-bottom-color: var(--ag-row-border-color);
+  }
+
+  .ag-cell {
+    line-height: 2;
+    padding-left: var(--ag-cell-horizontal-padding);
+    padding-right: var(--ag-cell-horizontal-padding);
+  }
+
+  // Pagination styling
+  .ag-paging-panel {
+    padding: 1rem;
+    border-top: 1px solid var(--ag-row-border-color);
+  }
+}
+
+// Container for action buttons
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+// Responsive adjustments
+@media (max-width: 768px) {
+  .container {
+    padding: 1rem;
+  }
+
+  .btn {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+}
+
 .tickets-container {
   margin-top: 2rem;
   background: white;
@@ -15,11 +151,6 @@ h3 {
   margin-top: 0;
   margin-bottom: 1rem;
   color: #2d3748;
-}
-
-:host ::ng-deep .ag-theme-alpine {
-  --ag-grid-size: 4px;
-  --ag-list-item-height: 30px;
 }
 
 .tickets-page {
@@ -119,4 +250,15 @@ h3 {
       background-color: var(--ag-row-hover-color);
     }
   }
+}
+
+.position-relative {
+  position: relative;
+}
+
+// Disabled state styling
+.form-select:disabled,
+.btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }

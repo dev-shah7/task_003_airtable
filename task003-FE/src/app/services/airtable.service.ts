@@ -14,6 +14,8 @@ export class AirtableService {
   );
   token$ = this.tokenSubject.asObservable();
 
+  private apiUrl = environment.apiUrl;
+
   constructor(private http: HttpClient) {}
 
   fetchAndStoreBases(): Observable<any> {
@@ -23,7 +25,7 @@ export class AirtableService {
     }
 
     return this.http.post(
-      `${environment.apiUrl}/airtable/sync-bases`,
+      `${this.apiUrl}/airtable/sync-bases`,
       {},
       {
         headers: new HttpHeaders({
@@ -40,7 +42,7 @@ export class AirtableService {
       throw new Error('No Airtable token found');
     }
 
-    return this.http.get(`${environment.apiUrl}/airtable/user-bases`, {
+    return this.http.get(`${this.apiUrl}/airtable/user-bases`, {
       headers: new HttpHeaders({
         Authorization: `Bearer ${token}`,
       }),
@@ -49,14 +51,14 @@ export class AirtableService {
   }
 
   testSession(): Observable<any> {
-    return this.http.get(`${environment.apiUrl}/auth/test-session`, {
+    return this.http.get(`${this.apiUrl}/auth/test-session`, {
       withCredentials: true,
     });
   }
 
   whoami(): Observable<any> {
     const token = localStorage.getItem('airtableToken');
-    return this.http.get(`${environment.apiUrl}/auth/whoami`, {
+    return this.http.get(`${this.apiUrl}/auth/whoami`, {
       headers: token
         ? new HttpHeaders({
             Authorization: `Bearer ${token}`,
@@ -69,7 +71,7 @@ export class AirtableService {
   refreshToken(): Observable<any> {
     return this.http
       .post(
-        `${environment.apiUrl}/airtable/refresh-token`,
+        `${this.apiUrl}/airtable/refresh-token`,
         {},
         {
           withCredentials: true,
@@ -93,7 +95,7 @@ export class AirtableService {
 
   disconnect(): Observable<any> {
     return this.http.post(
-      `${environment.apiUrl}/airtable/disconnect`,
+      `${this.apiUrl}/airtable/disconnect`,
       {},
       {
         withCredentials: true,
@@ -101,8 +103,13 @@ export class AirtableService {
     );
   }
 
-  syncTickets(baseId: string): Observable<any> {
-    console.log('AirtableService: Initiating ticket sync for base:', baseId);
+  syncTickets(baseId: string, tableId: string): Observable<any> {
+    console.log(
+      'AirtableService: Initiating ticket sync for base:',
+      baseId,
+      'table:',
+      tableId
+    );
     const token = localStorage.getItem('airtableToken');
     if (!token) {
       console.error('AirtableService: No token found');
@@ -111,7 +118,7 @@ export class AirtableService {
 
     return this.http
       .post(
-        `${environment.apiUrl}/airtable/bases/${baseId}/sync-tickets`,
+        `${this.apiUrl}/airtable/bases/${baseId}/tables/${tableId}/records`,
         {},
         {
           headers: new HttpHeaders({
@@ -131,14 +138,21 @@ export class AirtableService {
       );
   }
 
-  getTickets(baseId: string, queryParams: string): Observable<any> {
+  getTickets(
+    baseId: string,
+    tableId: string,
+    queryParams: string
+  ): Observable<any> {
     const token = localStorage.getItem('airtableToken');
     if (!token) {
       throw new Error('No Airtable token found');
     }
 
+    // Ensure tableId is properly formatted
+    const formattedTableId = tableId ? `/${tableId}` : '';
+
     return this.http.get(
-      `${environment.apiUrl}/airtable/bases/${baseId}/tickets?${queryParams}`,
+      `${this.apiUrl}/airtable/bases/${baseId}/tables${formattedTableId}/records?${queryParams}`,
       {
         headers: new HttpHeaders({
           Authorization: `Bearer ${token}`,
@@ -151,5 +165,42 @@ export class AirtableService {
   setToken(token: string) {
     localStorage.setItem('airtableToken', token);
     this.tokenSubject.next(token);
+  }
+
+  getBaseTables(baseId: string) {
+    const token = localStorage.getItem('airtableToken');
+    if (!token) {
+      throw new Error('No Airtable token found');
+    }
+
+    return this.http.get(`${this.apiUrl}/tables/${baseId}`, {
+      headers: new HttpHeaders({
+        Authorization: `Bearer ${token}`,
+      }),
+      withCredentials: true,
+    });
+  }
+
+  getUserTickets(baseId: string, tableId: string) {
+    const token = localStorage.getItem('airtableToken');
+    if (!token) {
+      throw new Error('No Airtable token found');
+    }
+
+    // Ensure tableId is properly formatted
+    const formattedTableId = tableId ? `/${tableId}` : '';
+
+    return this.http.get(
+      `${this.apiUrl}/airtable/bases/${baseId}/tables${formattedTableId}/records`,
+      {
+        headers: new HttpHeaders({
+          Authorization: `Bearer ${token}`,
+        }),
+        withCredentials: true,
+        params: {
+          pageSize: '10',
+        },
+      }
+    );
   }
 }

@@ -1,88 +1,19 @@
 const mongoose = require("mongoose");
 
-const ticketSchema = new mongoose.Schema(
-  {
-    airtableId: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    title: {
-      type: String,
-      default: "",
-    },
-    description: {
-      type: String,
-      default: "",
-    },
-    priority: {
-      type: String,
-      default: "",
-    },
-    status: {
-      type: String,
-      default: "",
-    },
-    createdTime: {
-      type: Date,
-      default: null,
-    },
-    statusLastChanged: {
-      type: Date,
-      default: null,
-    },
-    daysToClose: {
-      type: Number,
-      default: 0,
-    },
-    daysUntilSLABreach: {
-      type: String,
-      default: "",
-    },
-    daysOverSLA: {
-      type: Number,
-      default: 0,
-    },
-    resolutionNotes: {
-      type: String,
-      default: "",
-    },
-    submittedBy: {
-      id: String,
-      email: String,
-      name: String,
-    },
-    assignee: {
-      id: String,
-      email: String,
-      name: String,
-    },
-    category: {
-      type: [String],
-      default: [],
-    },
-    employeeEquipment: {
-      type: [String],
-      default: [],
-    },
-    ticketId: {
-      type: Number,
-      default: null,
-    },
-    userId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    baseId: {
-      type: String,
-      required: true,
-    },
+const ticketSchema = new mongoose.Schema({
+  airtableId: String,
+  baseId: String,
+  tableId: String,
+  userId: mongoose.Schema.Types.ObjectId,
+  // Store all fields dynamically
+  fields: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed,
   },
-  {
-    timestamps: true, // Adds createdAt and updatedAt fields
-  }
-);
+  // Keep metadata separate
+  createdTime: Date,
+  lastModifiedTime: Date,
+});
 
 // Index for faster queries
 ticketSchema.index({ userId: 1, baseId: 1 });

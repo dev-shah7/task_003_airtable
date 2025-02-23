@@ -88,7 +88,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.syncStatus = 'Syncing tickets...';
     this.error = '';
 
-    this.airtableService.syncTickets(baseId).subscribe({
+    this.airtableService.syncTickets(baseId, 'tickets').subscribe({
       next: (response) => {
         console.log('Ticket sync response:', response);
         if (response.success) {
@@ -110,7 +110,7 @@ export class AppComponent implements OnInit, OnDestroy {
     console.log('Verifying synced tickets for base:', baseId);
     const queryParams = new URLSearchParams({ pageSize: '100' }).toString();
 
-    this.airtableService.getTickets(baseId, queryParams).subscribe({
+    this.airtableService.getTickets(baseId, 'tickets', queryParams).subscribe({
       next: (response) => {
         console.log('Verified tickets:', response);
         if (response.success) {
@@ -126,10 +126,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private loadTickets(baseId: string): void {
     const queryParams = new URLSearchParams({
-      pageSize: '5',
+      pageSize: '10',
     }).toString();
 
-    this.airtableService.getTickets(baseId, queryParams).subscribe({
+    this.airtableService.getTickets(baseId, 'tickets', queryParams).subscribe({
       next: (response: TicketResponse) => {
         if (response.success) {
           this.tickets = response.data;
@@ -154,10 +154,10 @@ export class AppComponent implements OnInit, OnDestroy {
   onBaseSelect(baseId: string, baseName: string): void {
     console.log(`Selecting base: ${baseId} (${baseName})`);
     const queryParams = new URLSearchParams({
-      pageSize: '5',
+      pageSize: '10',
     }).toString();
 
-    this.airtableService.getTickets(baseId, queryParams).subscribe({
+    this.airtableService.getTickets(baseId, 'tickets', queryParams).subscribe({
       next: (response: TicketResponse) => {
         console.log('Received response:', response);
         if (response.success && response.data) {

@@ -1,23 +1,87 @@
-<div class="tickets-page">
-  <div class="table-card">
-    <div class="table-controls">
-      <div class="search-container">
-        <h3>Tickets for {{ baseName }}</h3>
-      </div>
-    </div>
+<div class="container mt-4">
+  <app-loader *ngIf="isLoadingBases" message="Loading bases..."></app-loader>
 
-    <div class="table-container">
-      <ag-grid-angular
-        #agGrid
-        class="ag-theme-material"
-        [rowData]="tickets"
-        [columnDefs]="columnDefs"
-        [defaultColDef]="defaultColDef"
-        [gridOptions]="gridOptions"
-        [modules]="modules"
-        (rowClicked)="onRowClicked($event)"
-      >
-      </ag-grid-angular>
-    </div>
+  <!-- Bases Dropdown -->
+  <div class="mb-4">
+    <label for="baseSelect" class="form-label">Select Base</label>
+    <select
+      id="baseSelect"
+      class="form-select"
+      [(ngModel)]="selectedBaseId"
+      (ngModelChange)="onBaseSelect($event)"
+      [disabled]="isLoadingBases"
+    >
+      <option value="">Choose a base...</option>
+      <option *ngFor="let base of bases" [value]="base.id">
+        {{ base.name }}
+      </option>
+    </select>
+  </div>
+
+  <!-- Tables Dropdown (shows only when base is selected) -->
+  <div class="mb-4" *ngIf="selectedBaseId">
+    <app-loader
+      *ngIf="isLoadingTables"
+      message="Loading tables..."
+    ></app-loader>
+    <label for="tableSelect" class="form-label">Select Table</label>
+    <select
+      id="tableSelect"
+      class="form-select"
+      [(ngModel)]="selectedTableId"
+      (ngModelChange)="onTableSelect($event)"
+      [disabled]="isLoadingTables"
+    >
+      <option value="">Choose a table...</option>
+      <option *ngFor="let table of tables" [value]="table.id">
+        {{ table.name }}
+      </option>
+    </select>
+  </div>
+
+  <!-- Action Buttons (show only when table is selected) -->
+  <div
+    class="mb-4"
+    *ngIf="selectedBaseId && selectedTableId && selectedTableId !== ''"
+  >
+    <button
+      class="btn btn-primary me-2"
+      (click)="syncTickets()"
+      [disabled]="isSyncing"
+    >
+      <span *ngIf="!isSyncing">Sync Tickets</span>
+      <span *ngIf="isSyncing">Syncing...</span>
+    </button>
+    <button
+      class="btn btn-secondary"
+      (click)="viewTickets()"
+      [disabled]="isLoadingTickets"
+    >
+      View Tickets
+    </button>
+  </div>
+
+  <!-- AG Grid (shows only when viewTickets is clicked) -->
+  <div
+    *ngIf="showGrid"
+    class="ag-theme-alpine position-relative"
+    style="width: 100%; height: 600px"
+  >
+    <app-loader
+      *ngIf="isLoadingTickets"
+      message="Loading tickets..."
+      [overlay]="true"
+    ></app-loader>
+    <ag-grid-angular
+      [rowData]="tickets"
+      [columnDefs]="columnDefs"
+      [defaultColDef]="defaultColDef"
+      [gridOptions]="gridOptions"
+      [pagination]="true"
+      [paginationPageSize]="10"
+      [modules]="modules"
+      (rowClicked)="onRowClicked($event)"
+    >
+    </ag-grid-angular>
   </div>
 </div>

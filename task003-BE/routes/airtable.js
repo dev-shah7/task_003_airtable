@@ -292,7 +292,7 @@ router.post(
   ticketController.syncTickets
 );
 router.get(
-  "/bases/:baseId/tickets",
+  "/bases/:baseId/tables/:tableId/records",
   withAirtableAuth,
   ticketController.getUserTickets
 );

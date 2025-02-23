@@ -1,4 +1,4 @@
-<div class="container">
+<div class="app-container">
   <app-header></app-header>
 
   <div *ngIf="bases.length > 0" class="bases-container">
@@ -13,12 +13,6 @@
         <p *ngIf="error" class="error">{{ error }}</p>
       </div>
     </div>
-  </div>
-
-  <!-- Add debug info -->
-  <div *ngIf="showTickets">
-    <p>Debug: Number of tickets: {{ tickets.length }}</p>
-    <p>Selected Base ID: {{ selectedBaseId }}</p>
   </div>
 
   <!-- Only show tickets component when we have data -->
