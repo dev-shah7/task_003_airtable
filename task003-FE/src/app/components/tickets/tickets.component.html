@@ -1,19 +1,40 @@
-<div class="tickets-container">
-  <h3>Tickets for {{ baseName }}</h3>
-  <div class="grid-container">
-    <ag-grid-angular
-      class="ag-theme-alpine"
-      [rowData]="tickets"
-      [columnDefs]="columnDefs"
-      [defaultColDef]="defaultColDef"
-      [pagination]="true"
-      [paginationPageSize]="10"
-      [animateRows]="true"
-      [modules]="modules"
-      [domLayout]="'autoHeight'"
-      style="width: 100%; height: 500px"
-      (rowClicked)="onRowClicked($event)"
-    >
-    </ag-grid-angular>
+<div class="tickets-page">
+  <div class="table-card">
+    <div class="table-controls">
+      <div class="search-container">
+        <h3>Tickets for {{ baseName }}</h3>
+        <mat-form-field appearance="outline">
+          <mat-label>Search tickets</mat-label>
+          <input
+            matInput
+            [(ngModel)]="searchText"
+            (ngModelChange)="onSearchChange($event)"
+            placeholder="Search across all columns..."
+          />
+          <button
+            *ngIf="searchText"
+            matSuffix
+            mat-icon-button
+            (click)="clearSearch()"
+          >
+            <mat-icon>close</mat-icon>
+          </button>
+        </mat-form-field>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <ag-grid-angular
+        #agGrid
+        class="ag-theme-material"
+        [rowData]="tickets"
+        [columnDefs]="columnDefs"
+        [defaultColDef]="defaultColDef"
+        [gridOptions]="gridOptions"
+        [modules]="modules"
+        (rowClicked)="onRowClicked($event)"
+      >
+      </ag-grid-angular>
+    </div>
   </div>
 </div>

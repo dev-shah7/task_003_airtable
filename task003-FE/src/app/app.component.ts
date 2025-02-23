@@ -3,7 +3,19 @@ import { CommonModule } from '@angular/common';
 import { HeaderComponent } from './components/header/header.component';
 import { TicketsComponent } from './components/tickets/tickets.component';
 import { AirtableService } from './services/airtable.service';
-import { Subscription } from 'rxjs';
+import { Subscription, Observable } from 'rxjs';
+import { MatSnackBar } from '@angular/material/snack-bar';
+
+interface TicketResponse {
+  success: boolean;
+  data: any[];
+  pagination: {
+    offset: string | null;
+    hasMore: boolean;
+    pageSize: number;
+    totalRecords: number;
+  };
+}
 
 @Component({
   selector: 'app-root',
@@ -19,8 +31,21 @@ export class AppComponent implements OnInit, OnDestroy {
   error: string = '';
   syncStatus: string = '';
   private subscription = new Subscription();
+  tickets: any[] = [];
+  selectedBaseId: string = '';
+  showTickets: boolean = false;
+  selectedBaseName: string = '';
+  ticketsPagination: {
+    offset: string | null;
+    hasMore: boolean;
+    pageSize: number;
+    totalRecords: number;
+  } | null = null;
 
-  constructor(private airtableService: AirtableService) {
+  constructor(
+    private airtableService: AirtableService,
+    private snackBar: MatSnackBar
+  ) {
     // Subscribe to token changes
     this.subscription.add(
       this.airtableService.token$.subscribe((token) => {
@@ -83,11 +108,13 @@ export class AppComponent implements OnInit, OnDestroy {
 
   verifyTickets(baseId: string) {
     console.log('Verifying synced tickets for base:', baseId);
-    this.airtableService.getTickets(baseId).subscribe({
+    const queryParams = new URLSearchParams({ pageSize: '100' }).toString();
+
+    this.airtableService.getTickets(baseId, queryParams).subscribe({
       next: (response) => {
         console.log('Verified tickets:', response);
         if (response.success) {
-          this.syncStatus += ` (Verified ${response.tickets.length} tickets in database)`;
+          this.syncStatus += ` (Verified ${response.data.length} tickets in database)`;
         }
       },
       error: (error) => {
@@ -97,28 +124,70 @@ export class AppComponent implements OnInit, OnDestroy {
     });
   }
 
-  loadTickets(baseId: string, baseName: string) {
-    console.log('Loading tickets for base:', baseId);
-    this.currentBaseName = baseName;
-    this.error = '';
-    this.currentTickets = []; // Clear current tickets before loading new ones
+  private loadTickets(baseId: string): void {
+    const queryParams = new URLSearchParams({
+      pageSize: '5',
+    }).toString();
 
-    this.airtableService.getTickets(baseId).subscribe({
-      next: (response) => {
-        console.log('Tickets loaded:', response);
-        if (response.success && response.tickets) {
-          // Don't modify the data structure, use it as is
-          this.currentTickets = response.tickets;
-          console.log('Processed tickets:', this.currentTickets);
+    this.airtableService.getTickets(baseId, queryParams).subscribe({
+      next: (response: TicketResponse) => {
+        if (response.success) {
+          this.tickets = response.data;
+          this.selectedBaseId = baseId;
+          this.showTickets = true;
         } else {
-          this.error = 'Failed to load tickets';
-          this.currentTickets = [];
+          console.error('Failed to load tickets:', response);
+          this.snackBar.open('Failed to load tickets', 'Close', {
+            duration: 3000,
+          });
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         console.error('Error loading tickets:', error);
-        this.error = 'Failed to load tickets';
-        this.currentTickets = [];
+        this.snackBar.open('Error loading tickets', 'Close', {
+          duration: 3000,
+        });
+      },
+    });
+  }
+
+  onBaseSelect(baseId: string, baseName: string): void {
+    console.log(`Selecting base: ${baseId} (${baseName})`);
+    const queryParams = new URLSearchParams({
+      pageSize: '5',
+    }).toString();
+
+    this.airtableService.getTickets(baseId, queryParams).subscribe({
+      next: (response: TicketResponse) => {
+        console.log('Received response:', response);
+        if (response.success && response.data) {
+          this.tickets = [...response.data];
+          this.selectedBaseId = baseId;
+          this.selectedBaseName = baseName;
+          this.showTickets = true;
+
+          // Pass pagination info to the tickets component
+          this.ticketsPagination = {
+            offset: response.pagination.offset,
+            hasMore: response.pagination.hasMore,
+            pageSize: response.pagination.pageSize,
+            totalRecords: response.pagination.totalRecords,
+          };
+
+          console.log('Updated tickets:', this.tickets);
+        } else {
+          console.error('Failed to load tickets:', response);
+          this.snackBar.open('Failed to load tickets', 'Close', {
+            duration: 3000,
+          });
+        }
+      },
+      error: (error: Error) => {
+        console.error('Error loading tickets:', error);
+        this.snackBar.open('Error loading tickets', 'Close', {
+          duration: 3000,
+        });
+        this.showTickets = false;
       },
     });
   }

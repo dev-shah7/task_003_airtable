@@ -1,52 +1,33 @@
-<div class="app-container">
+<div class="container">
   <app-header></app-header>
 
-  <main class="main-content">
-    <div class="bases-container">
-      <h2>Your Airtable Bases</h2>
-      <div *ngIf="bases.length > 0" class="bases-grid">
-        <div *ngFor="let base of bases" class="base-card">
-          <div class="base-info">
-            <h3>{{ base.name }}</h3>
-            <p class="permission-level">{{ base.permissionLevel }}</p>
-          </div>
-          <div class="button-group">
-            <button
-              class="sync-button"
-              (click)="syncTickets(base.id)"
-              [disabled]="syncStatus.includes('Syncing')"
-            >
-              Sync Tickets
-            </button>
-            <button
-              class="view-button"
-              (click)="loadTickets(base.id, base.name)"
-            >
-              View Tickets
-            </button>
-          </div>
-        </div>
+  <div *ngIf="bases.length > 0" class="bases-container">
+    <div *ngFor="let base of bases" class="base-item">
+      <h3>{{ base.name }}</h3>
+      <div class="actions">
+        <button (click)="syncTickets(base.id)">Sync Tickets</button>
+        <button (click)="onBaseSelect(base.id, base.name)">View Tickets</button>
       </div>
-
-      <div *ngIf="bases.length === 0" class="no-bases">
-        <p>No bases found. Please connect to Airtable to see your bases.</p>
+      <div *ngIf="selectedBaseId === base.id">
+        <p *ngIf="syncStatus" class="sync-status">{{ syncStatus }}</p>
+        <p *ngIf="error" class="error">{{ error }}</p>
       </div>
     </div>
+  </div>
 
-    <div class="status-container">
-      <div *ngIf="error" class="error-message">
-        {{ error }}
-      </div>
-      <div *ngIf="syncStatus" class="success-message">
-        {{ syncStatus }}
-      </div>
-    </div>
+  <!-- Add debug info -->
+  <div *ngIf="showTickets">
+    <p>Debug: Number of tickets: {{ tickets.length }}</p>
+    <p>Selected Base ID: {{ selectedBaseId }}</p>
+  </div>
 
-    <div *ngIf="currentTickets.length > 0" class="tickets-section">
-      <app-tickets
-        [tickets]="currentTickets"
-        [baseName]="currentBaseName"
-      ></app-tickets>
-    </div>
-  </main>
+  <!-- Only show tickets component when we have data -->
+  <app-tickets
+    *ngIf="showTickets && tickets && tickets.length > 0"
+    [tickets]="tickets"
+    [baseName]="selectedBaseName"
+    [baseId]="selectedBaseId"
+    [pagination]="ticketsPagination"
+  >
+  </app-tickets>
 </div>

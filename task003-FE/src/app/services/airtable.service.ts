@@ -131,30 +131,21 @@ export class AirtableService {
       );
   }
 
-  getTickets(baseId: string): Observable<any> {
-    console.log('AirtableService: Fetching tickets for base:', baseId);
+  getTickets(baseId: string, queryParams: string): Observable<any> {
     const token = localStorage.getItem('airtableToken');
     if (!token) {
-      console.error('AirtableService: No token found');
       throw new Error('No Airtable token found');
     }
 
-    return this.http
-      .get(`${environment.apiUrl}/airtable/bases/${baseId}/tickets`, {
+    return this.http.get(
+      `${environment.apiUrl}/airtable/bases/${baseId}/tickets?${queryParams}`,
+      {
         headers: new HttpHeaders({
           Authorization: `Bearer ${token}`,
         }),
         withCredentials: true,
-      })
-      .pipe(
-        tap((response) =>
-          console.log('AirtableService: Get tickets response:', response)
-        ),
-        catchError((error) => {
-          console.error('AirtableService: Get tickets error:', error);
-          throw error;
-        })
-      );
+      }
+    );
   }
 
   setToken(token: string) {

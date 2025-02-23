@@ -144,10 +144,13 @@ exports.getUserTickets = async (req, res) => {
 
     const userId = req.session.user._id;
     const { baseId } = req.params;
-    const { offset = 0, pageSize: requestedPageSize } = req.query; // Get pageSize from query params
-
-    // Validate and limit pageSize
-    const pageSize = Math.max(parseInt(requestedPageSize) || 15, 1);
+    const {
+      pageSize = 5,
+      offset,
+      sortField,
+      sortDirection,
+      filterModel,
+    } = req.query;
 
     if (!baseId) {
       return res.status(400).json({ error: "Base ID is required" });
@@ -160,9 +163,33 @@ exports.getUserTickets = async (req, res) => {
     }
     const token = authHeader.split(" ")[1];
 
+    // Build query parameters
+    const queryParams = new URLSearchParams({
+      pageSize: Math.min(parseInt(pageSize), 100).toString(),
+    });
+
+    // Add offset if provided
+    if (offset) {
+      queryParams.append("offset", offset);
+    }
+
+    // Add sorting if provided
+    if (sortField && sortDirection) {
+      queryParams.append("sort[0][field]", sortField);
+      queryParams.append("sort[0][direction]", sortDirection);
+    }
+
+    // Add filtering if provided
+    if (filterModel) {
+      const formula = buildFilterFormula(filterModel);
+      if (formula) {
+        queryParams.append("filterByFormula", formula);
+      }
+    }
+
     // Fetch tickets from Airtable with pagination
     const response = await axios.get(
-      `https://api.airtable.com/v0/${baseId}/tickets`,
+      `https://api.airtable.com/v0/${baseId}/tickets?${queryParams.toString()}`,
       {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -208,11 +235,24 @@ exports.getUserTickets = async (req, res) => {
       baseId,
     }));
 
+    // Store new tickets in MongoDB if they don't exist
+    for (const ticket of tickets) {
+      await Ticket.findOneAndUpdate({ airtableId: ticket.airtableId }, ticket, {
+        upsert: true,
+        new: true,
+      });
+    }
+
+    // Return paginated response
     res.json({
       success: true,
-      tickets,
-      offset: response.data.offset, // Include offset for next page
-      hasMore: !!response.data.offset, // Boolean indicating if there are more records
+      data: tickets,
+      pagination: {
+        offset: response.data.offset,
+        hasMore: !!response.data.offset,
+        pageSize: parseInt(pageSize),
+        totalRecords: response.data.records?.length || 0,
+      },
     });
   } catch (error) {
     console.error("Failed to fetch user tickets:", error);
@@ -222,6 +262,30 @@ exports.getUserTickets = async (req, res) => {
     });
   }
 };
+
+// Helper function to build Airtable filter formula
+function buildFilterFormula(filterModel) {
+  const conditions = [];
+
+  for (const [field, filter] of Object.entries(filterModel)) {
+    switch (filter.type) {
+      case "equals":
+        conditions.push(`{${field}} = "${filter.value}"`);
+        break;
+      case "contains":
+        conditions.push(`FIND("${filter.value}", {${field}}) > 0`);
+        break;
+      case "startsWith":
+        conditions.push(
+          `LEFT({${field}}, ${filter.value.length}) = "${filter.value}"`
+        );
+        break;
+      // Add more filter types as needed
+    }
+  }
+
+  return conditions.length > 0 ? `AND(${conditions.join(",")})` : "";
+}
 
 function extractFieldChanges(diffRowHtml) {
   const $ = cheerio.load(diffRowHtml);

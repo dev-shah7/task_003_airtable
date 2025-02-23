@@ -21,3 +21,102 @@ h3 {
   --ag-grid-size: 4px;
   --ag-list-item-height: 30px;
 }
+
+.tickets-page {
+  padding: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+
+  @media (max-width: 768px) {
+    padding: 12px;
+  }
+}
+
+.table-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+
+  @media (max-width: 768px) {
+    margin-bottom: 16px;
+  }
+}
+
+.table-controls {
+  margin-bottom: 16px;
+  padding: 16px;
+
+  .search-container {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+
+    h3 {
+      margin: 0;
+    }
+
+    mat-form-field {
+      min-width: 300px;
+      flex: 1;
+      @media (max-width: 768px) {
+        width: 100%;
+      }
+    }
+  }
+}
+
+.table-container {
+  margin-bottom: 16px;
+  overflow: hidden;
+  border-radius: 4px;
+  height: calc(100vh - 300px);
+  min-height: 400px;
+
+  ag-grid-angular {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+// AG Grid Theme Customization
+:host ::ng-deep .ag-theme-material {
+  width: 100%;
+  height: 100%;
+  --ag-header-height: 48px;
+  --ag-row-height: 48px;
+  --ag-header-foreground-color: #424242;
+  --ag-header-background-color: #fafafa;
+  --ag-odd-row-background-color: #ffffff;
+  --ag-row-border-color: #f0f0f0;
+  --ag-row-hover-color: #f5f9ff;
+  --ag-selected-row-background-color: #e8f4fe;
+  --ag-font-size: 14px;
+  --ag-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+
+  .ag-header-cell {
+    font-weight: 600;
+    padding: 0 16px;
+
+    &:hover {
+      background-color: #f5f5f5;
+    }
+  }
+
+  .ag-cell {
+    padding: 8px 16px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+  }
+
+  .ag-row {
+    transition: background-color 0.2s;
+
+    &:hover {
+      background-color: var(--ag-row-hover-color);
+    }
+  }
+}
