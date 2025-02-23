@@ -75,16 +75,21 @@ export class TicketsComponent implements OnChanges {
     PaginationModule,
   ];
 
-  searchText: string = '';
-  private searchSubject = new Subject<string>();
-  private gridApi: any = null;
-
   private currentPage = 1;
   private offset: string | null = null;
   private hasMore = false;
   private loading = false;
 
   private readonly DEFAULT_PAGE_SIZE = 5;
+
+  private gridApi: any;
+  private paginationState = {
+    currentPage: 0,
+    pageSize: this.DEFAULT_PAGE_SIZE,
+    offset: null as string | null,
+    hasMore: false,
+    totalRecords: 0,
+  };
 
   defaultColDef: ColDef = {
     sortable: true,
@@ -94,9 +99,6 @@ export class TicketsComponent implements OnChanges {
     filterParams: {
       buttons: ['reset', 'apply'],
       closeOnApply: true,
-    },
-    getQuickFilterText: (params) => {
-      return params.value?.toString() || '';
     },
   };
 
@@ -108,7 +110,6 @@ export class TicketsComponent implements OnChanges {
     animateRows: true,
     enableRangeSelection: true,
     suppressAggFuncInHeader: true,
-    quickFilterText: '',
     suppressPaginationPanel: false,
     paginationAutoPageSize: false,
     onGridReady: (params) => {
@@ -147,6 +148,8 @@ export class TicketsComponent implements OnChanges {
         this.fetchNextPage();
       }
     },
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
   };
 
   columnDefs: ColDef[] = [
@@ -200,9 +203,7 @@ export class TicketsComponent implements OnChanges {
   constructor(
     private dialog: MatDialog,
     private airtableService: AirtableService
-  ) {
-    this.setupSearch();
-  }
+  ) {}
 
   ngOnInit() {
     console.log('Component initialized with:', {
@@ -242,42 +243,6 @@ export class TicketsComponent implements OnChanges {
       this.updateGrid(this.tickets);
     }
   }
-
-  private setupSearch(): void {
-    this.searchSubject
-      .pipe(debounceTime(300), distinctUntilChanged())
-      .subscribe((searchText) => {
-        if (this.gridApi) {
-          this.gridApi.setFilterModel({
-            quickFilter: { filter: searchText },
-          });
-        }
-      });
-  }
-
-  onSearchChange(value: string) {
-    console.log('Search changed:', value);
-    this.searchText = value;
-    this.searchSubject.next(value);
-  }
-
-  clearSearch() {
-    console.log('Clearing search');
-    this.searchText = '';
-    if (this.gridApi) {
-      this.gridApi.setFilterModel(null);
-    }
-    this.searchSubject.next('');
-  }
-
-  // Initialize pagination state with default values
-  private paginationState = {
-    currentPage: 0,
-    pageSize: this.DEFAULT_PAGE_SIZE,
-    offset: null as string | null,
-    hasMore: false,
-    totalRecords: 0,
-  };
 
   private onPageSizeChanged(newPageSize: number) {
     if (!this.gridApi) return;
