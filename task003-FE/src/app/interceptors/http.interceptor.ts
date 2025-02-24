@@ -13,7 +13,6 @@ export class HttpXsrfInterceptor implements HttpInterceptor {
     req: HttpRequest<any>,
     next: HttpHandler
   ): Observable<HttpEvent<any>> {
-    // Clone the request and add withCredentials
     const authReq = req.clone({
       withCredentials: true,
     });

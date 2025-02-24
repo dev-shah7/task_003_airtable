@@ -92,7 +92,6 @@ export class MFADialogComponent implements AfterViewInit {
   ) {}
 
   ngAfterViewInit() {
-    // Focus the input field when dialog opens
     setTimeout(() => {
       this.codeInput.nativeElement.focus();
     });

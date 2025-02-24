@@ -46,7 +46,6 @@ export class AppComponent implements OnInit, OnDestroy {
     private airtableService: AirtableService,
     private snackBar: MatSnackBar
   ) {
-    // Subscribe to token changes
     this.subscription.add(
       this.airtableService.token$.subscribe((token) => {
         if (token) {
@@ -58,8 +57,6 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    // Initial load if token exists
-    console.log('hi');
     if (!!localStorage.getItem('airtableToken')) {
       this.loadBases();
     }
@@ -70,10 +67,8 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   loadBases() {
-    console.log('Loading bases...');
     this.airtableService.getUserBases().subscribe({
       next: (response) => {
-        console.log('Bases loaded:', response);
         this.bases = response.bases;
       },
       error: (error) => {
@@ -84,13 +79,11 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   syncTickets(baseId: string) {
-    console.log('Starting ticket sync for base:', baseId);
     this.syncStatus = 'Syncing tickets...';
     this.error = '';
 
     this.airtableService.syncTickets(baseId, 'tickets').subscribe({
       next: (response) => {
-        console.log('Ticket sync response:', response);
         if (response.success) {
           this.syncStatus = `Successfully synced ${response.tickets.length} tickets`;
           this.verifyTickets(baseId);
@@ -107,12 +100,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   verifyTickets(baseId: string) {
-    console.log('Verifying synced tickets for base:', baseId);
     const queryParams = new URLSearchParams({ pageSize: '100' }).toString();
 
     this.airtableService.getTickets(baseId, 'tickets', queryParams).subscribe({
       next: (response) => {
-        console.log('Verified tickets:', response);
         if (response.success) {
           this.syncStatus += ` (Verified ${response.data.length} tickets in database)`;
         }
@@ -152,29 +143,24 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   onBaseSelect(baseId: string, baseName: string): void {
-    console.log(`Selecting base: ${baseId} (${baseName})`);
     const queryParams = new URLSearchParams({
       pageSize: '10',
     }).toString();
 
     this.airtableService.getTickets(baseId, 'tickets', queryParams).subscribe({
       next: (response: TicketResponse) => {
-        console.log('Received response:', response);
         if (response.success && response.data) {
           this.tickets = [...response.data];
           this.selectedBaseId = baseId;
           this.selectedBaseName = baseName;
           this.showTickets = true;
 
-          // Pass pagination info to the tickets component
           this.ticketsPagination = {
             offset: response.pagination.offset,
             hasMore: response.pagination.hasMore,
             pageSize: response.pagination.pageSize,
             totalRecords: response.pagination.totalRecords,
           };
-
-          console.log('Updated tickets:', this.tickets);
         } else {
           console.error('Failed to load tickets:', response);
           this.snackBar.open('Failed to load tickets', 'Close', {

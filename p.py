@@ -6,13 +6,13 @@ from datetime import datetime
 
 # Airtable API details
 BASE_ID = "appA0Q5Vu9k7N0pgv"
-TABLE_ID = "Tickets"
+TABLE_ID = "tblq8PqlQcwHAYea3"
 API_URL = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_ID}"
 
 print("API URL:", API_URL)
 
 HEADERS = {
-    "Authorization": "Bearer oaaq3Zq9DRsG1faAl.v1.eyJ1c2VySWQiOiJ1c3JMdzZWREJmZnR5a0hmbyIsImV4cGlyZXNBdCI6IjIwMjUtMDItMjBUMTg6NDU6NTEuMDAwWiIsIm9hdXRoQXBwbGljYXRpb25JZCI6Im9hcDgzMEFWZlZ2UVgzYlNyIiwic2VjcmV0IjoiZDE2OTA2NmY4Yzc3NmNlN2QzMDYxZWI2YWNkMWVmZjdmZTIzMmE0MDc1ZjM4MDVlMzk2MWMxMjMxNzY4MDEwZiJ9.0683020be7d926a695190c15d2a255a941a17bd02e15562f7345ecbc365e3fe7",
+    "Authorization": "Bearer oaaJKNVkVPPwPlGyh.v1.eyJ1c2VySWQiOiJ1c3JMdzZWREJmZnR5a0hmbyIsImV4cGlyZXNBdCI6IjIwMjUtMDItMjRUMTM6MTU6MTguMDAwWiIsIm9hdXRoQXBwbGljYXRpb25JZCI6Im9hcDgzMEFWZlZ2UVgzYlNyIiwic2VjcmV0IjoiZmU5NGE3ODI3MDMxYzk1NGVhM2I1OTZiZmE4MzIzODNjOWQ3MmJiNmM5OTA2Mjc4YzI0ZWIwZDNiMWNjMGQ0YyJ9.dc5bbae3a3091bfbdbea29a92f799b0d2ec6a81f479005e11884034ffd52c62f",
     "Content-Type": "application/json"
 }
 
@@ -37,7 +37,7 @@ def generate_ticket():
 
 # Generate 1000 tickets in batches of 10 (Airtable allows up to 10 records per request)
 batch_size = 10
-total_tickets = 200  # Adjust as needed
+total_tickets = 150  # Adjust as needed
 
 for i in range(0, total_tickets, batch_size):
     batch_records = [generate_ticket() for _ in range(batch_size)]

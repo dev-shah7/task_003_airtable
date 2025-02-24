@@ -7,7 +7,6 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-// Dropdown Styling
 .mb-4 {
   margin-bottom: 1.5rem;
 
@@ -41,7 +40,6 @@
   }
 }
 
-// Button Styling
 .btn {
   padding: 0.625rem 1rem;
   border-radius: 6px;
@@ -74,7 +72,6 @@
   }
 }
 
-// AG Grid Styling
 :host ::ng-deep .ag-theme-alpine {
   --ag-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
@@ -104,21 +101,18 @@
     padding-right: var(--ag-cell-horizontal-padding);
   }
 
-  // Pagination styling
   .ag-paging-panel {
     padding: 1rem;
     border-top: 1px solid var(--ag-row-border-color);
   }
 }
 
-// Container for action buttons
 .action-buttons {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
 }
 
-// Responsive adjustments
 @media (max-width: 768px) {
   .container {
     padding: 1rem;
@@ -211,7 +205,6 @@ h3 {
   }
 }
 
-// AG Grid Theme Customization
 :host ::ng-deep .ag-theme-material {
   width: 100%;
   height: 100%;
@@ -256,7 +249,6 @@ h3 {
   position: relative;
 }
 
-// Disabled state styling
 .form-select:disabled,
 .btn:disabled {
   opacity: 0.7;

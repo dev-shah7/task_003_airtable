@@ -10,10 +10,8 @@ router.get("/", (req, res) => {
   res.json({ message: "Welcome to the API" });
 });
 
-// Public routes
 router.use("/auth", authRoutes);
 
-// Add Airtable routes
 router.use("/airtable", airtableRoutes);
 router.use("/cookies", cookieRoutes);
 router.use("/tickets", ticketRoutes);

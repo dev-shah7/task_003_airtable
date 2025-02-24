@@ -1,12 +1,10 @@
 const puppeteer = require("puppeteer");
 
-const AIRTABLE_BASE_URL = "https://airtable.com/login";
 let browserInstance = null;
 let pageInstance = null;
 
 const initializeBrowser = async () => {
   try {
-    // Close any existing browser instance
     await cleanup();
 
     browserInstance = await puppeteer.launch({
@@ -34,22 +32,18 @@ const getAirtableCookies = async (req, res) => {
     pageInstance.setDefaultNavigationTimeout(120000);
     pageInstance.setDefaultTimeout(120000);
 
-    console.log("Navigating to login page...");
-    await pageInstance.goto(AIRTABLE_BASE_URL, {
+    await pageInstance.goto(`${process.env.AIRTABLE_URL}/login`, {
       waitUntil: "networkidle2",
       timeout: 60000,
     });
 
-    console.log("Entering email...");
     await pageInstance.waitForSelector('input[type="email"]', {
       timeout: 30000,
     });
     await pageInstance.type('input[type="email"]', process.env.AIRTABLE_EMAIL);
 
-    console.log("Clicking continue...");
     await pageInstance.click('button[type="submit"]');
 
-    console.log("Waiting for password field...");
     await pageInstance.waitForSelector('input[type="password"]', {
       timeout: 30000,
     });
@@ -58,7 +52,6 @@ const getAirtableCookies = async (req, res) => {
       process.env.AIRTABLE_PASSWORD
     );
 
-    console.log("Submitting login...");
     await Promise.all([
       pageInstance.click('button[type="submit"]'),
       pageInstance
@@ -69,9 +62,7 @@ const getAirtableCookies = async (req, res) => {
         .catch(() => {}),
     ]);
 
-    // Update MFA detection to look for authenticator input
     try {
-      // Look specifically for the authenticator app input field
       const mfaInput = await pageInstance.waitForSelector(
         'input[placeholder*="digit code"]',
         {
@@ -80,7 +71,6 @@ const getAirtableCookies = async (req, res) => {
       );
 
       if (mfaInput) {
-        console.log("Authenticator verification required");
         return res.status(202).json({
           status: "MFA_REQUIRED",
           message:
@@ -92,7 +82,6 @@ const getAirtableCookies = async (req, res) => {
       console.log("No MFA verification required, continuing...");
     }
 
-    // Rest of your existing cookie retrieval logic...
     return await completeCookieRetrieval(res);
   } catch (error) {
     console.error("Error in cookie retrieval:", error);
@@ -116,40 +105,32 @@ const submitMFACode = async (req, res) => {
     }
 
     try {
-      console.log("Entering MFA code...");
       await pageInstance.type('input[name="code"]', mfaCode);
 
-      console.log("Submitting MFA form...");
       await pageInstance.click(
         "div.link-quiet.rounded.py1.px2.blue.text-white.display.pointer.center"
       );
 
-      // Wait for navigation to complete
       await pageInstance.waitForNavigation({
         waitUntil: "networkidle0",
         timeout: 30000,
       });
 
-      console.log("Waiting for session to stabilize...");
-      // Use evaluate to wait in the browser context
       await pageInstance.evaluate(
         () => new Promise((r) => setTimeout(r, 10000))
       );
 
-      // Make sure we're on airtable.com domain
       const url = await pageInstance.url();
       if (!url.includes("airtable.com")) {
         throw new Error("Not on Airtable domain after MFA");
       }
 
-      // Get all cookies from the page
       const cookies = await pageInstance.cookies();
       console.log(
         "Retrieved cookies:",
         cookies.map((c) => c.name)
       );
 
-      // Try to get cookies multiple times if needed
       let attempts = 0;
       const maxAttempts = 3;
       while (attempts < maxAttempts) {
@@ -161,7 +142,6 @@ const submitMFACode = async (req, res) => {
           console.log(
             `Cookie retrieval attempt ${attempts} failed, retrying...`
           );
-          // Use evaluate for timeout
           await pageInstance.evaluate(
             () => new Promise((r) => setTimeout(r, 5000))
           );
@@ -249,7 +229,6 @@ const cleanup = async () => {
   }
 };
 
-// Add this at the top of the file
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
 

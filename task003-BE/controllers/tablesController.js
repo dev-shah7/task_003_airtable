@@ -1,9 +1,7 @@
 const axios = require("axios");
 
 exports.getBaseTables = async (req, res) => {
-  console.log("Fetching tables for base...");
   try {
-    // Extract token from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
@@ -16,11 +14,7 @@ exports.getBaseTables = async (req, res) => {
       return res.status(400).json({ error: "Base ID is required" });
     }
 
-    console.log("Using token:", token);
-    console.log("Using baseId:", baseId);
-
     try {
-      // Fetch tables from Airtable
       const response = await axios.get(
         `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
         {
@@ -31,8 +25,6 @@ exports.getBaseTables = async (req, res) => {
           validateStatus: (status) => status < 500,
         }
       );
-
-      console.log("Airtable API Response Status:", response.status);
 
       if (response.status === 401) {
         return res.status(401).json({

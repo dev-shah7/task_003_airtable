@@ -4,12 +4,12 @@ const userSchema = new mongoose.Schema({
   displayName: String,
   airtableUserId: {
     type: String,
-    sparse: true, // Allow null values
-    unique: true, // But ensure uniqueness for non-null values
+    sparse: true,
+    unique: true,
   },
   airtableToken: {
     type: String,
-    select: false, // Won't be returned by default for security
+    select: false,
   },
   airtableRefreshToken: {
     type: String,
@@ -19,10 +19,8 @@ const userSchema = new mongoose.Schema({
   airtableTokenExpiry: Date,
 });
 
-// Add index for airtableUserId
 userSchema.index({ airtableUserId: 1 }, { unique: true, sparse: true });
 
-// Method to safely get user data without sensitive fields
 userSchema.methods.toSafeObject = function () {
   return {
     id: this._id,
@@ -33,7 +31,6 @@ userSchema.methods.toSafeObject = function () {
   };
 };
 
-// Drop any existing indexes before creating the model
 mongoose.connection.on("connected", async () => {
   try {
     await mongoose.connection.collections.users?.dropIndexes();

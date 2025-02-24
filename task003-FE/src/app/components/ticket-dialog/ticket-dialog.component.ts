@@ -68,14 +68,11 @@ export class TicketDialogComponent implements OnInit {
       this.loading = true;
       console.log('Fetching history for ticket:', this.data.airtableId);
 
-      // Check if we have valid cookies in localStorage
       const cookiesTimestamp = localStorage.getItem('cookiesTimestamp');
       const cookiesValid =
         cookiesTimestamp && Date.now() - parseInt(cookiesTimestamp) < 3600000; // 1 hour validity
 
       if (!cookiesValid) {
-        console.log('Cookies not found or expired, fetching new ones...');
-        // First try to get cookies
         const cookieResponse = await firstValueFrom<CookieResponse>(
           this.http.post<CookieResponse>(
             `${environment.apiUrl}/airtable/cookies`,
@@ -84,11 +81,7 @@ export class TicketDialogComponent implements OnInit {
           )
         );
 
-        console.log('Initial cookie response:', cookieResponse);
-
-        // Handle MFA if needed
         if (cookieResponse.status === 'MFA_REQUIRED') {
-          console.log('MFA required, showing dialog...');
           const mfaCode = await this.showMFADialog();
 
           if (mfaCode) {
@@ -104,18 +97,15 @@ export class TicketDialogComponent implements OnInit {
               throw new Error('MFA verification failed');
             }
 
-            // Store cookies timestamp after successful MFA
             localStorage.setItem('cookiesTimestamp', Date.now().toString());
           } else {
             throw new Error('MFA cancelled');
           }
         } else if (cookieResponse.success) {
-          // Store cookies timestamp after successful cookie retrieval
           localStorage.setItem('cookiesTimestamp', Date.now().toString());
         }
       }
 
-      // Now fetch the ticket history
       const historyResponse = await firstValueFrom(
         this.http.get<any>(
           `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,

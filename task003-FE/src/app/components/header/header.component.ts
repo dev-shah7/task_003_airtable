@@ -14,20 +14,16 @@ export class HeaderComponent implements OnInit {
   constructor(private airtableService: AirtableService) {}
 
   ngOnInit() {
-    // Check for token in URL params
     const params = new URLSearchParams(window.location.search);
     const token = params.get('airtableToken');
 
     if (token) {
-      // Use the service method instead of directly setting localStorage
       this.airtableService.setToken(token);
-      // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }
 
   connectToAirtable() {
-    // Redirect to backend auth endpoint
     window.location.href = `${environment.apiUrl}/airtable/auth`;
   }
 

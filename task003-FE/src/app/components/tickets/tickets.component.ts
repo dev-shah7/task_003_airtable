@@ -32,7 +32,6 @@ import { LoaderComponent } from '../shared/loader/loader.component';
 import { MFADialogComponent } from '../mfa-dialog/mfa-dialog.component';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
-// Register AG Grid Modules
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
   TextFilterModule,
@@ -131,7 +130,6 @@ export class TicketsComponent implements OnInit, OnChanges {
       const newPageSize = this.gridApi.paginationGetPageSize();
       const currentPage = this.gridApi.paginationGetCurrentPage();
 
-      // Handle page navigation
       if (this.shouldFetchNextPage()) {
         this.fetchNextPage();
       }
@@ -148,7 +146,6 @@ export class TicketsComponent implements OnInit, OnChanges {
     const totalLoadedRows = this.tickets.length;
     const currentLastRow = (currentPage + 1) * pageSize;
 
-    // Fetch next page when we're on the last loaded page and there's more data
     return currentLastRow >= totalLoadedRows && this.paginationState.hasMore;
   }
 
@@ -165,7 +162,6 @@ export class TicketsComponent implements OnInit, OnChanges {
         width: 150,
       };
 
-      // Special handling for specific field types
       if (
         field.field === 'Created time' ||
         field.field.includes('time') ||
@@ -176,7 +172,6 @@ export class TicketsComponent implements OnInit, OnChanges {
           params.value ? new Date(params.value).toLocaleString() : '';
       }
 
-      // Handle nested objects like Submitted by, Assignee
       if (field.field === 'Submitted by' || field.field === 'Assignee') {
         colDef.field = `fields.${field.field}.name`;
         colDef.valueGetter = (params) =>
@@ -207,12 +202,9 @@ export class TicketsComponent implements OnInit, OnChanges {
     this.loadBases();
   }
 
-  ngOnChanges() {
-    // No changes to handle in ngOnChanges
-  }
+  ngOnChanges() {}
 
   private fetchNextPage() {
-    // Prevent multiple simultaneous requests
     if (this.isLoadingTickets) return;
 
     if (
@@ -239,7 +231,6 @@ export class TicketsComponent implements OnInit, OnChanges {
       .subscribe({
         next: (response: any) => {
           if (response.success) {
-            // Append new data to existing data
             this.tickets = [...this.tickets, ...response.data];
             this.paginationState = {
               ...this.paginationState,
@@ -264,37 +255,30 @@ export class TicketsComponent implements OnInit, OnChanges {
     }
 
     try {
-      // Get current page and page size
       const currentPage = this.gridApi.paginationGetCurrentPage();
       const pageSize = this.gridApi.paginationGetPageSize();
 
-      // Update the row data
       this.gridApi.setGridOption('rowData', this.tickets);
 
-      // Update total row count for pagination
       const totalRows = this.paginationState.hasMore
         ? this.tickets.length + pageSize
         : this.tickets.length;
 
-      // Update pagination
       if (this.gridApi.paginationProxy) {
         this.gridApi.paginationProxy.setRowCount(totalRows);
         this.gridApi.paginationGoToPage(currentPage);
       }
 
-      // Refresh the view
       this.gridApi.refreshCells({ force: true });
     } catch (error) {
       console.error('Error refreshing grid:', error);
     }
   }
 
-  // Add new properties for menu
   showMenu = false;
   menuX = 0;
   menuY = 0;
 
-  // Add click handler
   onRowClicked(event: any) {
     this.dialog.open(TicketDialogComponent, {
       width: '400px',
@@ -409,11 +393,8 @@ export class TicketsComponent implements OnInit, OnChanges {
   async refreshCookies() {
     try {
       const response = await firstValueFrom(this.airtableService.getCookies());
-      console.log('Cookie response:', response);
 
-      // Check if MFA is required
       if (response && response.status === 'MFA_REQUIRED') {
-        console.log('MFA required, showing dialog...');
         const mfaCode = await this.showMFADialog();
 
         if (mfaCode) {
@@ -458,7 +439,6 @@ export class TicketsComponent implements OnInit, OnChanges {
   }
 
   private async showMFADialog(): Promise<string | null> {
-    console.log('Opening MFA dialog...');
     return new Promise((resolve) => {
       const dialogRef = this.dialog.open(MFADialogComponent, {
         width: '400px',
@@ -476,9 +456,7 @@ export class TicketsComponent implements OnInit, OnChanges {
     });
   }
 
-  // Add this helper method for showing messages
   private showSnackBar(message: string, type: 'success' | 'error' = 'success') {
-    // You'll need to inject MatSnackBar in constructor
     this.snackBar.open(message, 'Close', {
       duration: 5000,
       panelClass: type === 'error' ? ['error-snackbar'] : ['success-snackbar'],

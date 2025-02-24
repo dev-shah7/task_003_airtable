@@ -3,18 +3,14 @@ const User = require("../models/User");
 const axios = require("axios");
 
 exports.syncBases = async (req, res) => {
-  console.log("Session user:", req.session?.user);
   try {
-    // Extract token from Authorization header
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "No token provided" });
     }
 
     const token = authHeader.split(" ")[1];
-    console.log("Using token:", token);
 
-    // Fetch bases from Airtable with proper API version
     try {
       const response = await axios.get(
         "https://api.airtable.com/v0/meta/bases",
@@ -42,16 +38,10 @@ exports.syncBases = async (req, res) => {
         });
       }
 
-      console.log("Fetched bases from Airtable:", response.data.bases);
-
-      // Store bases in MongoDB
       if (req.session?.user?._id) {
         const userId = req.session.user._id;
-        console.log("Using session user ID:", userId);
 
-        // Delete existing bases for this user
         await Base.deleteMany({ userId });
-        console.log("Deleted existing bases for user");
 
         const basesToCreate = response.data.bases.map((base) => ({
           id: base.id,
@@ -61,14 +51,12 @@ exports.syncBases = async (req, res) => {
         }));
 
         const createdBases = await Base.insertMany(basesToCreate);
-        console.log("Created new bases:", createdBases);
 
         res.json({
           success: true,
           bases: createdBases,
         });
       } else {
-        console.log("No user ID found in session");
         res.status(401).json({ error: "User not authenticated" });
       }
     } catch (apiError) {
@@ -95,7 +83,6 @@ exports.getUserBases = async (req, res) => {
 
     const userId = req.session.user._id;
     const bases = await Base.find({ userId });
-    console.log("Found bases for user:", bases);
 
     res.json({
       success: true,

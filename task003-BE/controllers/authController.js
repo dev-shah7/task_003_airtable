@@ -6,13 +6,11 @@ exports.whoami = async (req, res) => {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    // Get fresh user data
     const user = await User.findById(req.user._id);
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Return safe user object
     res.json({
       success: true,
       user: user.toSafeObject(),

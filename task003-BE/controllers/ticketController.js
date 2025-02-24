@@ -4,7 +4,6 @@ const cheerio = require("cheerio");
 const TicketRevision = require("../models/TicketRevision");
 
 exports.syncTickets = async (req, res) => {
-  console.log("Starting ticket sync...");
   try {
     const authHeader = req.headers.authorization;
     const { baseId, tableId } = req.params;
@@ -22,7 +21,6 @@ exports.syncTickets = async (req, res) => {
     const token = authHeader.split(" ")[1];
 
     try {
-      // Fetch tickets from Airtable
       const response = await axios.get(
         `https://api.airtable.com/v0/${baseId}/${tableId}`,
         {
@@ -48,14 +46,11 @@ exports.syncTickets = async (req, res) => {
         });
       }
 
-      // Store tickets in MongoDB
       if (req.session?.user?._id) {
         const userId = req.session.user._id;
 
-        // Delete existing tickets for this user, base and table
         await Ticket.deleteMany({ userId, baseId, tableId });
 
-        // Map Airtable records to ticket documents
         const ticketsToCreate = response.data.records.map((record) => ({
           airtableId: record.id,
           baseId,
@@ -71,7 +66,6 @@ exports.syncTickets = async (req, res) => {
             ordered: false,
           });
 
-          // Fetch and store revision history for each ticket
           for (const ticket of createdTickets) {
             try {
               const revisionResponse = await axios.get(
@@ -175,7 +169,6 @@ exports.getUserTickets = async (req, res) => {
     }
     const token = authHeader.split(" ")[1];
 
-    // Update Airtable API endpoint to use tableId
     const response = await axios.get(
       `https://api.airtable.com/v0/${baseId}/${tableId}`,
       {
@@ -211,7 +204,6 @@ exports.getUserTickets = async (req, res) => {
       });
     }
 
-    // Map records with dynamic fields
     const records = response.data.records.map((record) => ({
       airtableId: record.id,
       baseId,
@@ -222,7 +214,6 @@ exports.getUserTickets = async (req, res) => {
       lastModifiedTime: record.fields["Last modified time"] || null,
     }));
 
-    // Store in MongoDB
     for (const record of records) {
       await Ticket.findOneAndUpdate({ airtableId: record.airtableId }, record, {
         upsert: true,
@@ -230,12 +221,10 @@ exports.getUserTickets = async (req, res) => {
       });
     }
 
-    // Get field metadata for the grid
     const fieldMetadata = Object.keys(records[0]?.fields || {}).map(
       (fieldName) => ({
         field: fieldName,
         headerName: fieldName,
-        // Add default column configuration
         sortable: true,
         filter: true,
         resizable: true,
@@ -269,7 +258,6 @@ function extractFieldChanges(diffRowHtml) {
     const $ = cheerio.load(diffRowHtml);
     const changes = {};
 
-    // Get the column type and ID
     const columnHeader = $(".micro.strong");
     const columnType = columnHeader.text().trim();
     const columnId = columnHeader.attr("columnId");
@@ -279,7 +267,6 @@ function extractFieldChanges(diffRowHtml) {
 
     switch (dataColumnType) {
       case "select":
-        // Handle select fields (Status, Priority, etc.)
         const tokens = $(".cellToken");
         let oldValue = null;
         let newValue = null;
@@ -309,7 +296,6 @@ function extractFieldChanges(diffRowHtml) {
 
       case "text":
       case "multilineText":
-        // Handle text and multiline text fields
         const oldText = $(".text-red-dark1.strikethrough").text().trim();
         const newText = $(".greenLight2").not(".strikethrough").text().trim();
         const unchangedText = $(".unchangedPart").text().trim();
@@ -323,7 +309,6 @@ function extractFieldChanges(diffRowHtml) {
         break;
 
       case "collaborator":
-        // Handle collaborator fields (Assignee)
         const oldCollaborator = $(".strikethrough .flex-auto.truncate")
           .text()
           .trim();
@@ -342,7 +327,6 @@ function extractFieldChanges(diffRowHtml) {
         break;
 
       case "date":
-        // Handle date fields
         const oldDate = $(".text-red-dark1.strikethrough .flex.flex-auto")
           .text()
           .trim();
@@ -357,7 +341,6 @@ function extractFieldChanges(diffRowHtml) {
         break;
 
       default:
-        // Handle new field creation or other types
         if ($(".historicalCellValue.nullToValue").length) {
           const newValue = $(".greenLight2").text().trim();
           changes[columnType] = {
@@ -449,7 +432,6 @@ exports.getTicketRevisionHistory = async (req, res) => {
         });
       }
 
-      // Use the MFA code in your cookie fetching logic
       await getAirtableCookies(req, res, req.session.mfaCode);
 
       const newAuthCookies = req.cookies.authCookies
@@ -494,19 +476,15 @@ exports.getTicketRevisionHistory = async (req, res) => {
     console.log("revision data: ", revisionData);
     const formattedRevisions = [];
 
-    // Process each activity
     for (const [activityId, activity] of Object.entries(revisionData)) {
-      // Check if this activity already exists and was recently updated
       const existingRevision = await TicketRevision.findOne({
         activityId,
         $or: [
-          // Check if it's a new record (created in last minute)
           {
             createdAt: {
-              $gt: new Date(Date.now() - 60000), // 1 minute ago
+              $gt: new Date(Date.now() - 60000),
             },
           },
-          // Or if it was updated in last minute
           {
             updatedAt: {
               $gt: new Date(Date.now() - 60000),
@@ -515,7 +493,6 @@ exports.getTicketRevisionHistory = async (req, res) => {
         ],
       });
 
-      // Skip if we recently processed this activity
       if (existingRevision) {
         console.log(`Skipping recently processed activity: ${activityId}`);
         continue;
@@ -526,9 +503,7 @@ exports.getTicketRevisionHistory = async (req, res) => {
         const columnType = Object.keys(extractedData)[0];
         const { oldValue, newValue } = extractedData[columnType];
 
-        // Check if the values are actually different
         if (oldValue !== newValue) {
-          // Check if we already have this exact change recorded
           const duplicateCheck = await TicketRevision.findOne({
             issueId: ticketId,
             columnType,
@@ -554,7 +529,6 @@ exports.getTicketRevisionHistory = async (req, res) => {
       }
     }
 
-    // Store only new revisions in MongoDB
     if (formattedRevisions.length > 0) {
       try {
         const bulkOps = formattedRevisions.map((revision) => ({
@@ -582,7 +556,6 @@ exports.getTicketRevisionHistory = async (req, res) => {
       console.log("No new revisions to store");
     }
 
-    // Get all revisions for this ticket from the database
     const allRevisions = await TicketRevision.find({ issueId: ticketId })
       .sort({ createdDate: -1 })
       .lean();

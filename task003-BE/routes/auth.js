@@ -5,7 +5,6 @@ const { withAirtableAuth } = require("../middleware/airtable");
 
 router.get("/status", (req, res) => {
   if (req.isAuthenticated() && req.user) {
-    // Store Airtable tokens in session if they exist
     if (req.user.airtableToken) {
       req.session.airtableToken = req.user.airtableToken;
       req.session.airtableRefreshToken = req.user.airtableRefreshToken;
@@ -36,10 +35,8 @@ router.get("/session-test", (req, res) => {
   });
 });
 
-// Add this route to test session storage
 router.get("/test-session", async (req, res) => {
   try {
-    // Store something in session
     if (!req.session.testData) {
       req.session.testData = {
         timestamp: Date.now(),
