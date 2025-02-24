@@ -4,13 +4,15 @@ import {
   MatDialogModule,
   MAT_DIALOG_DATA,
   MatDialogRef,
+  MatDialog,
 } from '@angular/material/dialog';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 import { switchMap, catchError } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { of, firstValueFrom } from 'rxjs';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MFADialogComponent } from '../mfa-dialog/mfa-dialog.component';
 
 interface TicketRevision {
   activityId: string;
@@ -22,6 +24,13 @@ interface TicketRevision {
   authoredBy: string;
   createdAt: string;
   updatedAt: string;
+}
+
+interface CookieResponse {
+  status?: string;
+  success?: boolean;
+  message?: string;
+  type?: string;
 }
 
 @Component({
@@ -44,63 +53,99 @@ export class TicketDialogComponent implements OnInit {
   constructor(
     @Inject(MAT_DIALOG_DATA) public data: any,
     private dialogRef: MatDialogRef<TicketDialogComponent>,
+    private dialog: MatDialog,
     private http: HttpClient
   ) {
     this.dialogRef.updateSize('800px', '600px');
   }
 
   ngOnInit() {
-    this.fetchRevisionHistory();
+    this.fetchTicketHistory();
   }
 
-  private fetchRevisionHistory() {
-    this.loading = true;
-    console.log('Fetching revision history for ticket:', this.data.airtableId);
+  async fetchTicketHistory() {
+    try {
+      this.loading = true;
+      console.log('Fetching history for ticket:', this.data.airtableId);
 
-    const cookiesFetched = localStorage.getItem('cookiesFetched') === 'true';
-    console.log('cookies', cookiesFetched);
+      // Check if we have valid cookies in localStorage
+      const cookiesTimestamp = localStorage.getItem('cookiesTimestamp');
+      const cookiesValid =
+        cookiesTimestamp && Date.now() - parseInt(cookiesTimestamp) < 3600000; // 1 hour validity
 
-    if (cookiesFetched === true) {
-      console.log('On fetched');
-      // Skip cookies fetch if already done
-      this.fetchHistory();
-    } else {
-      // First time - fetch cookies then history
-      this.http
-        .get<any>(`${environment.apiUrl}/cookies`, {
-          withCredentials: true,
-        })
-        .pipe(
-          switchMap((cookieResponse) => {
-            console.log('Cookie response:', cookieResponse);
-            if (!cookieResponse.success) {
-              throw new Error('Failed to get cookies: ' + cookieResponse.error);
-            }
-            localStorage.setItem('cookiesFetched', 'true');
-            return this.http.get<any>(
-              `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
-              { withCredentials: true }
+      if (!cookiesValid) {
+        console.log('Cookies not found or expired, fetching new ones...');
+        // First try to get cookies
+        const cookieResponse = await firstValueFrom<CookieResponse>(
+          this.http.post<CookieResponse>(
+            `${environment.apiUrl}/airtable/cookies`,
+            {},
+            { withCredentials: true }
+          )
+        );
+
+        console.log('Initial cookie response:', cookieResponse);
+
+        // Handle MFA if needed
+        if (cookieResponse.status === 'MFA_REQUIRED') {
+          console.log('MFA required, showing dialog...');
+          const mfaCode = await this.showMFADialog();
+
+          if (mfaCode) {
+            const mfaResponse = await firstValueFrom<CookieResponse>(
+              this.http.post<CookieResponse>(
+                `${environment.apiUrl}/airtable/mfa`,
+                { mfaCode },
+                { withCredentials: true }
+              )
             );
-          }),
-          catchError((error) => {
-            console.error('Error:', error);
-            return of({
-              success: false,
-              error: error.message || 'Failed to fetch history',
-            });
-          })
+
+            if (!mfaResponse.success) {
+              throw new Error('MFA verification failed');
+            }
+
+            // Store cookies timestamp after successful MFA
+            localStorage.setItem('cookiesTimestamp', Date.now().toString());
+          } else {
+            throw new Error('MFA cancelled');
+          }
+        } else if (cookieResponse.success) {
+          // Store cookies timestamp after successful cookie retrieval
+          localStorage.setItem('cookiesTimestamp', Date.now().toString());
+        }
+      }
+
+      // Now fetch the ticket history
+      const historyResponse = await firstValueFrom(
+        this.http.get<any>(
+          `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
+          { withCredentials: true }
         )
-        .subscribe(this.handleHistoryResponse.bind(this));
+      );
+
+      this.handleHistoryResponse(historyResponse);
+    } catch (error: any) {
+      console.error('Error in fetch history:', error);
+      this.handleHistoryResponse({
+        success: false,
+        error: error.message || 'Failed to fetch history',
+      });
+    } finally {
+      this.loading = false;
     }
   }
 
-  private fetchHistory() {
-    this.http
-      .get<any>(
-        `${environment.apiUrl}/tickets/${this.data.airtableId}/history`,
-        { withCredentials: true }
-      )
-      .subscribe(this.handleHistoryResponse.bind(this));
+  private async showMFADialog(): Promise<string | null> {
+    const dialogRef = this.dialog.open(MFADialogComponent, {
+      width: '400px',
+      disableClose: true,
+      data: {
+        title: 'Enter Authentication Code',
+        message: 'Please enter the code from your authenticator app',
+      },
+    });
+
+    return firstValueFrom(dialogRef.afterClosed());
   }
 
   private handleHistoryResponse(response: any) {
@@ -110,6 +155,5 @@ export class TicketDialogComponent implements OnInit {
     } else {
       this.error = response.error || 'Failed to fetch revision history';
     }
-    this.loading = false;
   }
 }

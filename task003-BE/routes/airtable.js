@@ -7,6 +7,7 @@ const User = require("../models/User");
 const { withAirtableAuth } = require("../middleware/airtable");
 const baseController = require("../controllers/baseController");
 const ticketController = require("../controllers/ticketController");
+const cookieController = require("../controllers/cookieController");
 
 // Store authorization states temporarily with cleanup
 const authorizationCache = {};
@@ -281,6 +282,7 @@ router.post("/disconnect", async (req, res) => {
     res.status(500).json({ error: "Failed to disconnect Airtable" });
   }
 });
+
 // Base routes
 router.post("/sync-bases", baseController.syncBases);
 router.get("/user-bases", withAirtableAuth, baseController.getUserBases);
@@ -296,5 +298,8 @@ router.get(
   withAirtableAuth,
   ticketController.getUserTickets
 );
+
+router.post("/cookies", cookieController.getAirtableCookies);
+router.post("/mfa", cookieController.submitMFACode);
 
 module.exports = router;

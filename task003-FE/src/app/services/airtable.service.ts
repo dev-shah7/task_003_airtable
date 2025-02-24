@@ -1,9 +1,8 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { environment } from '../../environments/environment';
-import { Observable, BehaviorSubject } from 'rxjs';
-import { tap, catchError, switchMap } from 'rxjs/operators';
-import { of } from 'rxjs';
+import { Observable, BehaviorSubject, of, throwError } from 'rxjs';
+import { tap, catchError, switchMap, map } from 'rxjs/operators';
 
 @Injectable({
   providedIn: 'root',
@@ -202,5 +201,49 @@ export class AirtableService {
         },
       }
     );
+  }
+
+  getCookies(): Observable<any> {
+    return this.http
+      .post(
+        `${this.apiUrl}/airtable/cookies`,
+        {},
+        {
+          withCredentials: true,
+          observe: 'response',
+        }
+      )
+      .pipe(
+        map((response) => response.body),
+        catchError((error) => {
+          console.log('Error response:', error);
+          if (error.status === 202) {
+            return of(error.error);
+          }
+          return throwError(() => ({
+            error: 'Failed to get cookies',
+            details: error.error?.message || error.message || 'Unknown error',
+          }));
+        })
+      );
+  }
+
+  submitMFACode(mfaCode: string): Observable<any> {
+    return this.http
+      .post(
+        `${this.apiUrl}/airtable/mfa`,
+        { mfaCode },
+        {
+          withCredentials: true,
+        }
+      )
+      .pipe(
+        catchError((error) =>
+          throwError(() => ({
+            error: 'Failed to submit MFA code',
+            details: error.error?.message || error.message || 'Unknown error',
+          }))
+        )
+      );
   }
 }

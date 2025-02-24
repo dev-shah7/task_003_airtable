@@ -21,9 +21,16 @@ import { MatInputModule } from '@angular/material/input';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { FormsModule } from '@angular/forms';
-import { Subject, debounceTime, distinctUntilChanged } from 'rxjs';
+import {
+  Subject,
+  debounceTime,
+  distinctUntilChanged,
+  firstValueFrom,
+} from 'rxjs';
 import { AirtableService } from '../../services/airtable.service';
 import { LoaderComponent } from '../shared/loader/loader.component';
+import { MFADialogComponent } from '../mfa-dialog/mfa-dialog.component';
+import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 // Register AG Grid Modules
 ModuleRegistry.registerModules([
@@ -50,6 +57,7 @@ ModuleRegistry.registerModules([
     MatButtonModule,
     FormsModule,
     LoaderComponent,
+    MatSnackBarModule,
   ],
   templateUrl: './tickets.component.html',
   styleUrls: ['./tickets.component.scss'],
@@ -191,7 +199,8 @@ export class TicketsComponent implements OnInit, OnChanges {
 
   constructor(
     private dialog: MatDialog,
-    private airtableService: AirtableService
+    private airtableService: AirtableService,
+    private snackBar: MatSnackBar
   ) {}
 
   ngOnInit() {
@@ -395,5 +404,84 @@ export class TicketsComponent implements OnInit, OnChanges {
           this.isLoadingTickets = false;
         },
       });
+  }
+
+  async refreshCookies() {
+    try {
+      const response = await firstValueFrom(this.airtableService.getCookies());
+      console.log('Cookie response:', response);
+
+      // Check if MFA is required
+      if (response && response.status === 'MFA_REQUIRED') {
+        console.log('MFA required, showing dialog...');
+        const mfaCode = await this.showMFADialog();
+
+        if (mfaCode) {
+          try {
+            const mfaResponse = await firstValueFrom(
+              this.airtableService.submitMFACode(mfaCode)
+            );
+            console.log('MFA submission response:', mfaResponse);
+
+            if (mfaResponse.success) {
+              this.showSnackBar('Cookies updated successfully');
+              return mfaResponse;
+            } else {
+              throw new Error(mfaResponse.error || 'Failed to submit MFA code');
+            }
+          } catch (mfaError: any) {
+            console.error('MFA submission error:', mfaError);
+            this.showSnackBar(
+              mfaError.details || 'Failed to submit MFA code',
+              'error'
+            );
+            throw mfaError;
+          }
+        } else {
+          this.showSnackBar('MFA code entry cancelled', 'error');
+          throw new Error('MFA code entry cancelled');
+        }
+      } else if (response && response.success) {
+        this.showSnackBar('Cookies updated successfully');
+        return response;
+      } else {
+        throw new Error('Invalid response format');
+      }
+    } catch (error: any) {
+      console.error('Error getting cookies:', error);
+      this.showSnackBar(
+        error.details || error.message || 'Failed to get cookies',
+        'error'
+      );
+      throw error;
+    }
+  }
+
+  private async showMFADialog(): Promise<string | null> {
+    console.log('Opening MFA dialog...');
+    return new Promise((resolve) => {
+      const dialogRef = this.dialog.open(MFADialogComponent, {
+        width: '400px',
+        disableClose: true,
+        data: {
+          title: 'Enter Authentication Code',
+          message: 'Please enter the code from your authenticator app',
+        },
+      });
+
+      dialogRef.afterClosed().subscribe((result) => {
+        console.log('Dialog closed with result:', result);
+        resolve(result);
+      });
+    });
+  }
+
+  // Add this helper method for showing messages
+  private showSnackBar(message: string, type: 'success' | 'error' = 'success') {
+    // You'll need to inject MatSnackBar in constructor
+    this.snackBar.open(message, 'Close', {
+      duration: 5000,
+      panelClass: type === 'error' ? ['error-snackbar'] : ['success-snackbar'],
+    });
   }
 }
